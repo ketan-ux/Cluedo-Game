@@ -113,12 +113,10 @@ export function useCluedoGame() {
             setStatus('LOBBY');
           },
           onDisconnected: () => {
-            setErrorMessage('Disconnected from host.');
-            setStatus('ERROR');
+            console.log('[Game] Direct channel notice, background sync active');
           },
           onError: (err) => {
-            setErrorMessage(`Connection error: ${err.message || 'Host not found'}`);
-            setStatus('ERROR');
+            console.warn('[Game] Network notice:', err);
           },
         });
 

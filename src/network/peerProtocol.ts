@@ -33,27 +33,75 @@ export const GLOBAL_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
   { urls: 'stun:stun.services.mozilla.com' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
 ];
 
 export function getWsUrl(): string {
   if (typeof window === 'undefined') return '';
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/ws`;
+}
+
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.protocol}//${window.location.host}/api`;
+}
+
+// HTTP fallback helpers
+export async function apiRegisterRoom(roomCode: string, hostPeerId: string, name: string, character: string) {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/rooms/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomCode, hostPeerId, name, character }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('[Protocol] apiRegisterRoom error:', err);
+    return null;
+  }
+}
+
+export async function apiJoinRoom(roomCode: string, guestPeerId: string, name: string, character: string) {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/rooms/${roomCode}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guestPeerId, name, character }),
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('[Protocol] apiJoinRoom error:', err);
+    return null;
+  }
+}
+
+export async function apiSendPacket(roomCode: string, payload: {
+  fromPeerId?: string;
+  targetPeerId?: string;
+  packet: NetworkPacket;
+  isHostBroadcast?: boolean;
+}) {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/rooms/${roomCode}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('[Protocol] apiSendPacket error:', err);
+    return null;
+  }
+}
+
+export async function apiPollPackets(roomCode: string, peerId: string, isHost: boolean) {
+  try {
+    const url = `${getApiBaseUrl()}/rooms/${roomCode}/poll?peerId=${encodeURIComponent(peerId)}&isHost=${isHost ? 'true' : 'false'}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
 }
 

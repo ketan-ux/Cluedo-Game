@@ -6,7 +6,15 @@ import {
   NetworkPacket,
   Suspect,
 } from '../types/cluedo';
-import { getGuestPeerId, getHostPeerId, getWsUrl, GLOBAL_ICE_SERVERS } from './peerProtocol';
+import {
+  apiJoinRoom,
+  apiPollPackets,
+  apiSendPacket,
+  getGuestPeerId,
+  getHostPeerId,
+  getWsUrl,
+  GLOBAL_ICE_SERVERS,
+} from './peerProtocol';
 
 export interface ClientCallbacks {
   onStateUpdate: (maskedState: MaskedGameState) => void;
@@ -24,6 +32,8 @@ export class P2PGuestClient {
   private isDestroyed: boolean = false;
   private hasTriggeredConnected: boolean = false;
   private wsReconnectTimeout: any = null;
+  private httpPollInterval: any = null;
+  private processedPacketIds: Set<string> = new Set();
   private roomCode: string;
   private guestName: string;
   private character: Suspect;
@@ -44,9 +54,70 @@ export class P2PGuestClient {
     this.connect();
   }
 
-  private connect() {
+  private async connect() {
+    // 1. Initial join via HTTP API (works through ANY firewall / restricted Wi-Fi)
+    try {
+      const joinRes = await apiJoinRoom(this.roomCode, this.myPeerId, this.guestName, this.character);
+      if (joinRes && joinRes.success) {
+        if (!this.hasTriggeredConnected) {
+          this.hasTriggeredConnected = true;
+          this.callbacks.onConnected();
+        }
+        if (joinRes.latestStateSnapshot) {
+          this.callbacks.onStateUpdate(joinRes.latestStateSnapshot);
+        }
+      }
+    } catch (e) {
+      console.warn('[P2P Client] HTTP join notice:', e);
+    }
+
+    // 2. Start WebSocket Relay for low-latency updates
     this.connectWebSocket();
+
+    // 3. Start background HTTP polling fallback
+    this.startHttpPolling();
+
+    // 4. Connect WebRTC (optional direct channel)
     this.connectPeerJs();
+  }
+
+  private startHttpPolling() {
+    if (this.httpPollInterval) clearInterval(this.httpPollInterval);
+    this.httpPollInterval = setInterval(async () => {
+      if (this.isDestroyed) return;
+      try {
+        const data = await apiPollPackets(this.roomCode, this.myPeerId, false);
+        if (data) {
+          if (!this.hasTriggeredConnected) {
+            this.hasTriggeredConnected = true;
+            this.callbacks.onConnected();
+          }
+          if (data.latestSnapshot) {
+            this.callbacks.onStateUpdate(data.latestSnapshot);
+          }
+          if (data.packets && Array.isArray(data.packets)) {
+            for (const queued of data.packets) {
+              if (queued.id && this.processedPacketIds.has(queued.id)) continue;
+              if (queued.id) this.processedPacketIds.add(queued.id);
+              this.handleInboundPacket(queued.packet);
+            }
+          }
+        }
+      } catch (err) {
+        // silent fallback
+      }
+    }, 1500);
+  }
+
+  private handleInboundPacket(packet: NetworkPacket) {
+    if (!packet) return;
+    if (packet.type === 'SYNC_STATE' && packet.payload?.maskedState) {
+      this.callbacks.onStateUpdate(packet.payload.maskedState);
+    } else if (packet.type === 'DISPROVED_REVEAL') {
+      this.callbacks.onDisprovedCardPrivate?.(packet.payload);
+    } else if (packet.type === 'ACCUSATION_REVEAL') {
+      this.callbacks.onAccusationResult?.(packet.payload);
+    }
   }
 
   private connectWebSocket() {
@@ -79,6 +150,9 @@ export class P2PGuestClient {
               this.hasTriggeredConnected = true;
               this.callbacks.onConnected();
             }
+            if (msg.latestSnapshot) {
+              this.callbacks.onStateUpdate(msg.latestSnapshot);
+            }
             // Send JOIN_LOBBY packet to host
             this.sendPacket({
               type: 'JOIN_LOBBY',
@@ -88,20 +162,9 @@ export class P2PGuestClient {
               },
             });
           } else if (msg.type === 'JOIN_ERROR') {
-            console.error('[P2P Client WS] Join error:', msg.message);
-            this.callbacks.onError(new Error(msg.message || 'Room not found or host offline'));
-          } else if (msg.type === 'HOST_DISCONNECTED') {
-            console.log('[P2P Client WS] Host disconnected');
-            this.callbacks.onDisconnected();
+            console.warn('[P2P Client WS] Join notice:', msg.message);
           } else if (msg.type === 'HOST_PACKET') {
-            const packet = msg.packet as NetworkPacket;
-            if (packet.type === 'SYNC_STATE') {
-              this.callbacks.onStateUpdate(packet.payload.maskedState);
-            } else if (packet.type === 'DISPROVED_REVEAL') {
-              this.callbacks.onDisprovedCardPrivate?.(packet.payload);
-            } else if (packet.type === 'ACCUSATION_REVEAL') {
-              this.callbacks.onAccusationResult?.(packet.payload);
-            }
+            this.handleInboundPacket(msg.packet as NetworkPacket);
           }
         } catch (err) {
           console.error('[P2P Client WS] Error processing message:', err);
@@ -109,8 +172,9 @@ export class P2PGuestClient {
       };
 
       this.ws.onclose = () => {
-        if (!this.isDestroyed && !this.connection?.open) {
-          console.log('[P2P Client WS] Disconnected from relay');
+        if (!this.isDestroyed) {
+          console.log('[P2P Client WS] Disconnected from relay, reconnecting in 2s...');
+          this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 2000);
         }
       };
 
@@ -165,14 +229,7 @@ export class P2PGuestClient {
 
         conn.on('data', (data: any) => {
           try {
-            const packet = data as NetworkPacket;
-            if (packet.type === 'SYNC_STATE') {
-              this.callbacks.onStateUpdate(packet.payload.maskedState);
-            } else if (packet.type === 'DISPROVED_REVEAL') {
-              this.callbacks.onDisprovedCardPrivate?.(packet.payload);
-            } else if (packet.type === 'ACCUSATION_REVEAL') {
-              this.callbacks.onAccusationResult?.(packet.payload);
-            }
+            this.handleInboundPacket(data as NetworkPacket);
           } catch (err) {
             console.error('[P2P Client WebRTC] Error processing packet:', err);
           }
@@ -180,9 +237,6 @@ export class P2PGuestClient {
 
         conn.on('close', () => {
           console.log('[P2P Client WebRTC] Direct connection closed');
-          if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            this.callbacks.onDisconnected();
-          }
         });
 
         conn.on('error', (err) => {
@@ -206,7 +260,13 @@ export class P2PGuestClient {
       payload: { packet },
     });
 
-    // 2. Also send via direct WebRTC connection if open
+    // 2. Also send via HTTP REST endpoint
+    apiSendPacket(this.roomCode, {
+      fromPeerId: this.myPeerId,
+      packet,
+    });
+
+    // 3. Send via direct WebRTC connection if open
     if (this.connection && this.connection.open) {
       this.connection.send(packet);
     }
@@ -215,6 +275,7 @@ export class P2PGuestClient {
   public destroy() {
     this.isDestroyed = true;
     if (this.wsReconnectTimeout) clearTimeout(this.wsReconnectTimeout);
+    if (this.httpPollInterval) clearInterval(this.httpPollInterval);
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -229,4 +290,5 @@ export class P2PGuestClient {
     }
   }
 }
+
 

@@ -27,7 +27,14 @@ import {
   rollDice,
   useSecretPassage,
 } from '../engine/cluedoEngine';
-import { getHostPeerId, getWsUrl, GLOBAL_ICE_SERVERS } from './peerProtocol';
+import {
+  apiPollPackets,
+  apiRegisterRoom,
+  apiSendPacket,
+  getHostPeerId,
+  getWsUrl,
+  GLOBAL_ICE_SERVERS,
+} from './peerProtocol';
 import { ROOM_DEFINITIONS } from '../engine/boardGrid';
 
 export interface ServerCallbacks {
@@ -44,6 +51,8 @@ export class P2PHostServer {
   private ws: WebSocket | null = null;
   private wsConnected: boolean = false;
   private wsReconnectTimeout: any = null;
+  private httpPollInterval: any = null;
+  private processedPacketIds: Set<string> = new Set();
   private isDestroyed: boolean = false;
   private connections: Map<string, DataConnection> = new Map();
   private masterState: GameState | null = null;
@@ -67,8 +76,33 @@ export class P2PHostServer {
 
   private initializeLobby() {
     this.setupLobbyState();
+    // 1. Register room with HTTP coordinator immediately
+    apiRegisterRoom(this.roomCode, this.hostPeerId, this.hostPlayer.name, this.hostPlayer.character);
+    // 2. Start WebSocket real-time relay
     this.connectWebSocket();
+    // 3. Start background HTTP polling fallback (for networks where WS/WebRTC are blocked)
+    this.startHttpPolling();
+    // 4. Initialize WebRTC peer (optional direct channel)
     this.initPeerJs();
+  }
+
+  private startHttpPolling() {
+    if (this.httpPollInterval) clearInterval(this.httpPollInterval);
+    this.httpPollInterval = setInterval(async () => {
+      if (this.isDestroyed) return;
+      try {
+        const data = await apiPollPackets(this.roomCode, this.hostPeerId, true);
+        if (data && data.packets && Array.isArray(data.packets)) {
+          for (const queued of data.packets) {
+            if (queued.id && this.processedPacketIds.has(queued.id)) continue;
+            if (queued.id) this.processedPacketIds.add(queued.id);
+            this.processPacket(queued.fromPeerId, queued.packet);
+          }
+        }
+      } catch (err) {
+        // silent fallback
+      }
+    }, 1500);
   }
 
   private connectWebSocket() {
@@ -85,7 +119,11 @@ export class P2PHostServer {
         this.sendWs({
           type: 'HOST_REGISTER',
           roomCode: this.roomCode,
-          payload: { hostPeerId: this.hostPeerId },
+          payload: {
+            hostPeerId: this.hostPeerId,
+            name: this.hostPlayer.name,
+            character: this.hostPlayer.character,
+          },
         });
       };
 
@@ -123,8 +161,8 @@ export class P2PHostServer {
       this.ws.onclose = () => {
         this.wsConnected = false;
         if (!this.isDestroyed) {
-          console.log('[P2P Server WS] Disconnected from relay, reconnecting in 2.5s...');
-          this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 2500);
+          console.log('[P2P Server WS] Disconnected from relay, reconnecting in 2s...');
+          this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 2000);
         }
       };
 
@@ -592,7 +630,16 @@ export class P2PHostServer {
         },
       });
 
-      // 2. Send via direct WebRTC connection if open
+      // 2. Also record in HTTP coordinator for long-polling guests
+      apiSendPacket(this.roomCode, {
+        targetPeerId: player.peerId,
+        packet: {
+          type: 'SYNC_STATE',
+          payload: { maskedState: peerMasked },
+        },
+      });
+
+      // 3. Send via direct WebRTC connection if open
       const conn = this.connections.get(player.peerId);
       if (conn && conn.open) {
         conn.send({
@@ -702,6 +749,7 @@ export class P2PHostServer {
   public destroy() {
     this.isDestroyed = true;
     if (this.wsReconnectTimeout) clearTimeout(this.wsReconnectTimeout);
+    if (this.httpPollInterval) clearInterval(this.httpPollInterval);
     if (this.ws) {
       this.ws.close();
       this.ws = null;

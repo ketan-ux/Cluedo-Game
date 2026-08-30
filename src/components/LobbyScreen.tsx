@@ -53,12 +53,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [selectedCharacter, setSelectedCharacter] = useState<Suspect>('Miss Scarlet');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Check URL query parameters for ?join=CODE
+  // Check URL query parameters for ?join=CODE or ?room=CODE or ?code=CODE
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const joinParam = urlParams.get('join');
+    const joinParam = urlParams.get('join') || urlParams.get('room') || urlParams.get('code');
     if (joinParam) {
-      setJoinCodeInput(joinParam.toUpperCase().slice(0, 6));
+      setJoinCodeInput(joinParam.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
       setTab('JOIN');
     }
   }, []);
