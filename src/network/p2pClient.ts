@@ -1,5 +1,6 @@
 import { Peer, DataConnection } from 'peerjs';
 import {
+  AccusationResultPayload,
   DisprovedCardPayload,
   MaskedGameState,
   NetworkPacket,
@@ -10,6 +11,7 @@ import { getGuestPeerId, getHostPeerId, getWsUrl, GLOBAL_ICE_SERVERS } from './p
 export interface ClientCallbacks {
   onStateUpdate: (maskedState: MaskedGameState) => void;
   onDisprovedCardPrivate?: (payload: DisprovedCardPayload) => void;
+  onAccusationResult?: (payload: AccusationResultPayload) => void;
   onConnected: () => void;
   onDisconnected: () => void;
   onError: (err: Error) => void;
@@ -97,6 +99,8 @@ export class P2PGuestClient {
               this.callbacks.onStateUpdate(packet.payload.maskedState);
             } else if (packet.type === 'DISPROVED_REVEAL') {
               this.callbacks.onDisprovedCardPrivate?.(packet.payload);
+            } else if (packet.type === 'ACCUSATION_REVEAL') {
+              this.callbacks.onAccusationResult?.(packet.payload);
             }
           }
         } catch (err) {
@@ -166,6 +170,8 @@ export class P2PGuestClient {
               this.callbacks.onStateUpdate(packet.payload.maskedState);
             } else if (packet.type === 'DISPROVED_REVEAL') {
               this.callbacks.onDisprovedCardPrivate?.(packet.payload);
+            } else if (packet.type === 'ACCUSATION_REVEAL') {
+              this.callbacks.onAccusationResult?.(packet.payload);
             }
           } catch (err) {
             console.error('[P2P Client WebRTC] Error processing packet:', err);

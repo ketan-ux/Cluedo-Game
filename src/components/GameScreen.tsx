@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  AccusationResultPayload,
   Card,
   DisprovedCardPayload,
   MaskedGameState,
@@ -17,7 +18,8 @@ import { DisproveModal } from './ui/DisproveModal';
 import { DisprovedRevealOverlay } from './ui/DisprovedRevealOverlay';
 import { AccusationModal } from './ui/AccusationModal';
 import { GameOverModal } from './ui/GameOverModal';
-import { BookOpen, LogOut, Sparkles, ArrowRight } from 'lucide-react';
+import { EnvelopeInspectionModal } from './ui/EnvelopeInspectionModal';
+import { BookOpen, LogOut, Sparkles, ArrowRight, Eye, ShieldAlert } from 'lucide-react';
 
 interface GameScreenProps {
   gameState: MaskedGameState;
@@ -25,6 +27,7 @@ interface GameScreenProps {
   myHand: Card[];
   isHost: boolean;
   disprovedCardReveal: DisprovedCardPayload | null;
+  accusationReveal: AccusationResultPayload | null;
   onRollDice: () => void;
   onMoveToken: (x: number, y: number) => void;
   onUseSecretPassage: (targetRoom: Room) => void;
@@ -35,6 +38,7 @@ interface GameScreenProps {
   onSendChat: (text: string) => void;
   onLeaveGame: () => void;
   onCloseDisprovedReveal: () => void;
+  onCloseAccusationReveal: () => void;
 }
 
 export const GameScreen: React.FC<GameScreenProps> = ({
@@ -43,6 +47,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   myHand,
   isHost,
   disprovedCardReveal,
+  accusationReveal,
   onRollDice,
   onMoveToken,
   onUseSecretPassage,
@@ -53,10 +58,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onSendChat,
   onLeaveGame,
   onCloseDisprovedReveal,
+  onCloseAccusationReveal,
 }) => {
   const [isNotebookOpen, setIsNotebookOpen] = useState(false);
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
   const [isAccusationOpen, setIsAccusationOpen] = useState(false);
+  const [isManualEnvelopeOpen, setIsManualEnvelopeOpen] = useState(false);
   const [dismissedSuggestionTurn, setDismissedSuggestionTurn] = useState<number | null>(null);
 
   const activePlayer = gameState.players[gameState.activePlayerIndex];
@@ -89,6 +96,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       dismissedSuggestionTurn !== gameState.turnNumber &&
       !!currentRoom);
 
+  // Fallback payload for manual inspection if eliminated
+  const inspectionPayload: AccusationResultPayload | null =
+    accusationReveal ||
+    (gameState.solution && myPlayer?.hasAccusedWrongly
+      ? {
+          isCorrect: false,
+          accuserPeerId: myPlayer.peerId,
+          accuserName: myPlayer.name,
+          accusation: gameState.lastAccusationResult?.accusation || {
+            suspect: gameState.solution.suspect,
+            weapon: gameState.solution.weapon,
+            room: gameState.solution.room,
+          },
+          envelope: gameState.solution,
+        }
+      : null);
+
+  const isEnvelopeModalVisible = !!accusationReveal || isManualEnvelopeOpen;
+
   return (
     <div
       id="game-screen"
@@ -103,9 +129,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           <span className="text-xs font-mono text-[#baa479] hidden sm:inline">
             1920s Noir Manor • Room #{gameState.roomCode}
           </span>
+          {myPlayer?.hasAccusedWrongly && (
+            <span className="text-[10px] font-mono font-bold bg-red-950/80 text-red-300 border border-red-700/60 px-2 py-0.5 rounded flex items-center space-x-1">
+              <ShieldAlert className="w-3 h-3 text-red-400" />
+              <span>Witness Mode (Eliminated from Turn Rotation)</span>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* If eliminated and solution is revealed, allow opening the envelope at will */}
+          {myPlayer?.hasAccusedWrongly && gameState.solution && (
+            <button
+              id="top-inspect-envelope-btn"
+              onClick={() => setIsManualEnvelopeOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg bg-[#9b111e]/30 hover:bg-[#9b111e]/50 text-red-200 border border-red-600/60 font-mono text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer shadow"
+            >
+              <Eye className="w-3.5 h-3.5 text-red-400" />
+              <span>View Murder Envelope</span>
+            </button>
+          )}
+
           {/* Quick Notebook Trigger */}
           <button
             id="top-notebook-btn"
@@ -119,7 +163,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           {/* Leave / Return */}
           <button
             onClick={onLeaveGame}
-            className="p-1.5 rounded-lg bg-[#2b170e] hover:bg-[#3d2013] text-[#baa479] hover:text-white border border-[#4a2e18] transition-colors"
+            className="p-1.5 rounded-lg bg-[#2b170e] hover:bg-[#3d2013] text-[#baa479] hover:text-white border border-[#4a2e18] transition-colors cursor-pointer"
             title="Leave Match"
           >
             <LogOut className="w-4 h-4" />
@@ -201,6 +245,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             onEndTurn={onEndTurn}
             onSendChat={onSendChat}
             onSecretPassage={(room) => onUseSecretPassage(room)}
+            onInspectEnvelope={() => setIsManualEnvelopeOpen(true)}
           />
         </aside>
       </main>
@@ -263,10 +308,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         onClose={() => setIsAccusationOpen(false)}
       />
 
-      {/* 6. Game Over Win/Loss Celebration Modal */}
+      {/* 6. Real Envelope Inspection Modal (Shows exact cards inside the Murder Envelope) */}
+      <EnvelopeInspectionModal
+        isOpen={isEnvelopeModalVisible}
+        payload={inspectionPayload}
+        onClose={() => {
+          setIsManualEnvelopeOpen(false);
+          onCloseAccusationReveal();
+        }}
+        onOpenNotebook={() => setIsNotebookOpen(true)}
+      />
+
+      {/* 7. Game Over Win/Loss Celebration Modal */}
       {gameState.phase === 'GAME_OVER' && (
         <GameOverModal
           winner={gameState.winner}
+          solution={gameState.solution}
           onPlayAgain={onLeaveGame}
         />
       )}

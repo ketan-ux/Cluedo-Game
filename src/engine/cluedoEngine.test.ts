@@ -110,7 +110,11 @@ describe('Authentic Cluedo Game Engine', () => {
     const wrongWeapon = ALL_WEAPONS.find((w) => w !== game.envelope.weapon)!;
     const wrongRoom = ALL_ROOMS.find((r) => r !== game.envelope.room)!;
 
-    const afterWrongAccusation = makeAccusation(game, wrongSuspect, wrongWeapon, wrongRoom);
+    const { state: afterWrongAccusation, result } = makeAccusation(game, wrongSuspect, wrongWeapon, wrongRoom);
+
+    // Result payload includes the secret envelope reveal
+    expect(result.isCorrect).toBe(false);
+    expect(result.envelope).toEqual(game.envelope);
 
     // Scarlet is now marked as hasAccusedWrongly
     expect(afterWrongAccusation.players[0].hasAccusedWrongly).toBe(true);
@@ -122,13 +126,14 @@ describe('Authentic Cluedo Game Engine', () => {
   it('5. Correct accusation immediately wins the game', () => {
     let game = initializeGame(testPlayers, 'TEST-WIN');
 
-    const winState = makeAccusation(
+    const { state: winState, result } = makeAccusation(
       game,
       game.envelope.suspect,
       game.envelope.weapon,
       game.envelope.room
     );
 
+    expect(result.isCorrect).toBe(true);
     expect(winState.winner).not.toBeNull();
     expect(winState.winner?.peerId).toBe('peer_scarlet');
     expect(winState.phase).toBe('GAME_OVER');

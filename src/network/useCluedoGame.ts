@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  AccusationResultPayload,
   Card,
   DisprovedCardPayload,
   MaskedGameState,
@@ -22,6 +23,7 @@ export function useCluedoGame() {
   const [status, setStatus] = useState<'IDLE' | 'CONNECTING' | 'LOBBY' | 'IN_GAME' | 'ERROR'>('IDLE');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [disprovedCardReveal, setDisprovedCardReveal] = useState<DisprovedCardPayload | null>(null);
+  const [accusationReveal, setAccusationReveal] = useState<AccusationResultPayload | null>(null);
 
   const hostServerRef = useRef<P2PHostServer | null>(null);
   const guestClientRef = useRef<P2PGuestClient | null>(null);
@@ -42,6 +44,16 @@ export function useCluedoGame() {
     sounds.playCardSlide();
   }, []);
 
+  // Private accusation outcome & envelope reveal handler
+  const handleAccusationResult = useCallback((payload: AccusationResultPayload) => {
+    setAccusationReveal(payload);
+    if (payload.isCorrect) {
+      sounds.playVictoryFanfare();
+    } else {
+      sounds.playGavelBang();
+    }
+  }, []);
+
   // 1. Create Room as Host
   const createRoom = useCallback(
     (character: Suspect, playerName: string) => {
@@ -58,6 +70,7 @@ export function useCluedoGame() {
         const server = new P2PHostServer(code, { character, name: playerName }, {
           onStateUpdate: handleStateUpdate,
           onDisprovedCardPrivate: handleDisprovedCardPrivate,
+          onAccusationResult: handleAccusationResult,
           onError: (err) => {
             setErrorMessage(err.message);
             setStatus('ERROR');
@@ -71,7 +84,7 @@ export function useCluedoGame() {
         setStatus('ERROR');
       }
     },
-    [handleStateUpdate, handleDisprovedCardPrivate]
+    [handleStateUpdate, handleDisprovedCardPrivate, handleAccusationResult]
   );
 
   // 2. Join Room as Guest
@@ -95,6 +108,7 @@ export function useCluedoGame() {
         const client = new P2PGuestClient(cleanCode, playerName, character, {
           onStateUpdate: handleStateUpdate,
           onDisprovedCardPrivate: handleDisprovedCardPrivate,
+          onAccusationResult: handleAccusationResult,
           onConnected: () => {
             setStatus('LOBBY');
           },
@@ -115,7 +129,7 @@ export function useCluedoGame() {
         setStatus('ERROR');
       }
     },
-    [handleStateUpdate, handleDisprovedCardPrivate]
+    [handleStateUpdate, handleDisprovedCardPrivate, handleAccusationResult]
   );
 
   // Send packet routing
@@ -219,10 +233,15 @@ export function useCluedoGame() {
     setRoomCode('');
     setErrorMessage('');
     setDisprovedCardReveal(null);
+    setAccusationReveal(null);
   }, []);
 
   const closeDisprovedCardReveal = useCallback(() => {
     setDisprovedCardReveal(null);
+  }, []);
+
+  const closeAccusationReveal = useCallback(() => {
+    setAccusationReveal(null);
   }, []);
 
   // Cleanup on unmount
@@ -249,6 +268,7 @@ export function useCluedoGame() {
     status,
     errorMessage,
     disprovedCardReveal,
+    accusationReveal,
     actions: {
       createRoom,
       joinRoom,
@@ -266,6 +286,7 @@ export function useCluedoGame() {
       sendChatMessage,
       leaveGame,
       closeDisprovedCardReveal,
+      closeAccusationReveal,
     },
   };
 }

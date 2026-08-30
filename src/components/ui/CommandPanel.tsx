@@ -21,6 +21,8 @@ import {
   VolumeX,
   ArrowRight,
   UserCheck,
+  Eye,
+  ShieldAlert,
 } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
@@ -35,6 +37,7 @@ interface CommandPanelProps {
   onEndTurn: () => void;
   onSendChat: (text: string) => void;
   onSecretPassage?: (targetRoom: Room) => void;
+  onInspectEnvelope?: () => void;
 }
 
 export const CommandPanel: React.FC<CommandPanelProps> = ({
@@ -48,6 +51,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
   onEndTurn,
   onSendChat,
   onSecretPassage,
+  onInspectEnvelope,
 }) => {
   const [chatInput, setChatInput] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -194,6 +198,29 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
 
       {/* 3. Action Command Center Buttons */}
       <div className="p-3.5 bg-[#1a0f0d] border-b border-[#d4af37]/30 flex flex-col space-y-2.5">
+        {/* Eliminated Player Witness Mode Banner */}
+        {isEliminated && (
+          <div className="p-3 rounded-xl bg-[#1f0d0a] border border-[#9b111e]/80 shadow-md flex flex-col space-y-2 animate-fade-in text-xs">
+            <div className="flex items-center space-x-2 text-red-300 font-deco font-bold uppercase tracking-wider">
+              <ShieldAlert className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <span>Eliminated Detective • Witness Mode</span>
+            </div>
+            <p className="text-[11px] font-serif-vintage italic text-[#baa479] leading-relaxed">
+              Your previous accusation was incorrect. You are out of turn rotation, but remain to refute other players' suggestions with cards from your hand.
+            </p>
+            {gameState.solution && onInspectEnvelope && (
+              <button
+                type="button"
+                onClick={onInspectEnvelope}
+                className="w-full py-2 px-3 rounded bg-[#9b111e]/40 hover:bg-[#9b111e]/70 text-red-200 border border-red-500/50 font-deco text-[11px] font-bold uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-red-400" />
+                <span>View Secret Murder Envelope Cards</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Prominent High-Priority Pass Turn / Accuse Callout when Turn Actions are complete */}
         {isMyTurn && !isEliminated && gameState.phase === 'ACCUSE' && (
           <div className="p-3 rounded-xl bg-gradient-to-r from-[#2b170e] via-[#3a2012] to-[#2b170e] border-2 border-[#d4af37] shadow-[0_4px_20px_rgba(212,175,55,0.25)] flex flex-col space-y-2 animate-fade-in">

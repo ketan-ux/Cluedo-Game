@@ -3,6 +3,7 @@ import {
   ALL_ROOMS,
   ALL_SUSPECTS,
   ALL_WEAPONS,
+  AccusationResultPayload,
   Card,
   DisprovedCardPayload,
   GameState,
@@ -32,6 +33,7 @@ import { ROOM_DEFINITIONS } from '../engine/boardGrid';
 export interface ServerCallbacks {
   onStateUpdate: (maskedState: MaskedGameState) => void;
   onDisprovedCardPrivate?: (payload: DisprovedCardPayload) => void;
+  onAccusationResult?: (payload: AccusationResultPayload) => void;
   onError: (err: Error) => void;
   onClientConnected?: (peerId: string) => void;
   onClientDisconnected?: (peerId: string) => void;
@@ -490,12 +492,40 @@ export class P2PHostServer {
 
       case 'MAKE_ACCUSATION': {
         if (!this.isActiveTurn(senderPeerId)) return;
-        this.masterState = makeAccusation(
+        const { state: nextState, result } = makeAccusation(
           this.masterState,
           packet.payload.suspect,
           packet.payload.weapon,
           packet.payload.room
         );
+        this.masterState = nextState;
+
+        // If host was the accuser, notify host directly
+        if (senderPeerId === this.hostPeerId) {
+          this.callbacks.onAccusationResult?.(result);
+        } else {
+          // Send private ACCUSATION_REVEAL to the accuser
+          this.sendWs({
+            type: 'HOST_TO_GUEST',
+            roomCode: this.roomCode,
+            payload: {
+              targetPeerId: senderPeerId,
+              packet: {
+                type: 'ACCUSATION_REVEAL',
+                payload: result,
+              },
+            },
+          });
+
+          const accuserConn = this.connections.get(senderPeerId);
+          if (accuserConn && accuserConn.open) {
+            accuserConn.send({
+              type: 'ACCUSATION_REVEAL',
+              payload: result,
+            });
+          }
+        }
+
         this.broadcastState();
         this.triggerAiTurnIfNeeded();
         break;

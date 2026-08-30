@@ -16,6 +16,7 @@ import {
   getRoomTokenOffset,
   isCellar,
   isCorridor,
+  isStartingPosition,
   ROOM_DEFINITIONS,
   RoomDefinition,
 } from '../../engine/boardGrid';
@@ -112,6 +113,9 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
         const isValidMove = validMoveMap.has(key);
         const playersHere = playersOnCorridor[key] || [];
 
+        const startingSuspect = isStartingPosition(x, y);
+        const startingSuspectColor = startingSuspect ? SUSPECT_COLORS[startingSuspect] : null;
+
         // Checkered corridor effect
         const isCheckered = (x + y) % 2 === 0;
 
@@ -131,6 +135,8 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
                 ? 'pointer-events-none opacity-0' // Room backgrounds rendered separately
                 : cellar
                 ? 'pointer-events-none opacity-0'
+                : startingSuspect
+                ? 'border-2 border-[#d4af37] shadow-inner font-bold'
                 : corridor
                 ? `${
                     isCheckered
@@ -144,6 +150,24 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
                 : ''
             }`}
           >
+            {/* Starting Space Motif Pedestal */}
+            {startingSuspect && !room && (
+              <div
+                className="absolute inset-0 flex items-center justify-center rounded-sm opacity-90"
+                style={{
+                  backgroundColor: startingSuspectColor?.hex || '#333',
+                  boxShadow: `inset 0 0 4px rgba(0,0,0,0.6)`,
+                }}
+                title={`${startingSuspect} Starting Space`}
+              >
+                {playersHere.length === 0 && (
+                  <span className="text-[7px] font-deco font-black text-white/80 uppercase">
+                    {startingSuspect.charAt(0)}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Doorway Icon Indicator */}
             {doorway && !room && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -162,8 +186,8 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
                 <div
                   key={p.peerId}
                   id={`pawn-${p.character.toLowerCase().replace(/[\s.]+/g, '_')}`}
-                  className={`absolute z-30 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white font-bold text-[10px] shadow-lg transition-transform duration-300 ${
-                    isActive ? 'scale-125 ring-2 ring-yellow-400 ring-offset-1 ring-offset-black' : ''
+                  className={`absolute z-30 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white font-black text-[10px] shadow-[0_4px_10px_rgba(0,0,0,0.8)] transition-transform duration-300 ${
+                    isActive ? 'scale-125 ring-2 ring-yellow-400 ring-offset-1 ring-offset-black z-40' : ''
                   }`}
                   style={{ backgroundColor: color.hex }}
                   title={`${p.name} (${p.character})`}

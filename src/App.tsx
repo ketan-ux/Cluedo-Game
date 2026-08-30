@@ -15,6 +15,7 @@ export default function App() {
     status,
     errorMessage,
     disprovedCardReveal,
+    accusationReveal,
     actions,
   } = useCluedoGame();
 
@@ -58,6 +59,7 @@ export default function App() {
           myHand={myHand}
           isHost={isHost}
           disprovedCardReveal={disprovedCardReveal}
+          accusationReveal={accusationReveal}
           onRollDice={actions.rollDice}
           onMoveToken={actions.moveToken}
           onUseSecretPassage={actions.useSecretPassage}
@@ -68,6 +70,7 @@ export default function App() {
           onSendChat={actions.sendChatMessage}
           onLeaveGame={actions.leaveGame}
           onCloseDisprovedReveal={actions.closeDisprovedCardReveal}
+          onCloseAccusationReveal={actions.closeAccusationReveal}
         />
       ) : status !== 'CONNECTING' ? (
         /* Lobby or Pre-match Setup Screen */

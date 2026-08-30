@@ -1,4 +1,4 @@
-import { Position, Room, SECRET_PASSAGES, Suspect, Weapon } from '../types/cluedo';
+import { Position, Room, SECRET_PASSAGES, Suspect, SUSPECT_STARTING_POSITIONS, Weapon } from '../types/cluedo';
 
 export interface RoomDefinition {
   name: Room;
@@ -36,7 +36,7 @@ export const ROOM_DEFINITIONS: Record<Room, RoomDefinition> = {
   },
   Conservatory: {
     name: 'Conservatory',
-    bounds: { minX: 18, maxX: 23, minY: 0, maxY: 4 },
+    bounds: { minX: 18, maxX: 23, minY: 0, maxY: 5 },
     center: { x: 21, y: 2 },
     doorways: [{ x: 18, y: 5 }],
     secretPassageTo: 'Lounge',
@@ -57,7 +57,7 @@ export const ROOM_DEFINITIONS: Record<Room, RoomDefinition> = {
   },
   'Billiard Room': {
     name: 'Billiard Room',
-    bounds: { minX: 18, maxX: 23, minY: 7, maxY: 12 },
+    bounds: { minX: 18, maxX: 23, minY: 8, maxY: 12 },
     center: { x: 21, y: 10 },
     doorways: [
       { x: 18, y: 9 },
@@ -115,6 +115,17 @@ export const ROOM_DEFINITIONS: Record<Room, RoomDefinition> = {
 // Inaccessible Cellar in Center (where the envelope rests)
 export const CELLAR_BOUNDS = { minX: 9, maxX: 14, minY: 9, maxY: 15 };
 
+// Check if a tile coordinate is a designated starting position for any suspect
+export function isStartingPosition(x: number, y: number): Suspect | null {
+  for (const [suspect, pos] of Object.entries(SUSPECT_STARTING_POSITIONS) as [
+    Suspect,
+    { x: number; y: number }
+  ][]) {
+    if (pos.x === x && pos.y === y) return suspect;
+  }
+  return null;
+}
+
 // Check if a tile coordinate is inside any room
 export function getRoomAtCoordinate(x: number, y: number): Room | null {
   for (const [roomName, def] of Object.entries(ROOM_DEFINITIONS) as [Room, RoomDefinition][]) {
@@ -146,14 +157,17 @@ export function isCorridor(x: number, y: number): boolean {
   if (isCellar(x, y)) return false;
   if (getRoomAtCoordinate(x, y) !== null) return false;
   
+  // Starting positions are always valid corridor squares
+  if (isStartingPosition(x, y)) return true;
+
   // Unused corner blocks in original board
   if ((x === 6 && y === 0) || (x === 17 && y === 0)) return false;
   if ((x === 0 && y === 6) || (x === 0 && y === 8)) return false;
   if ((x === 23 && y === 6) || (x === 23 && y === 8)) return false;
   if ((x === 0 && y === 16) || (x === 0 && y === 18)) return false;
   if ((x === 23 && y === 13) || (x === 23 && y === 14)) return false;
-  if ((x === 7 && y === 24) || (x === 8 && y === 24)) return false;
-  if ((x === 15 && y === 24) || (x === 16 && y === 24)) return false;
+  if (x === 7 && y === 24) return false;
+  if (x === 16 && y === 24) return false;
 
   return true;
 }

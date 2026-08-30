@@ -2,6 +2,7 @@ import {
   ALL_ROOMS,
   ALL_SUSPECTS,
   ALL_WEAPONS,
+  AccusationResultPayload,
   Card,
   DisprovedCardPayload,
   GameLogEntry,
@@ -467,9 +468,7 @@ export function makeAccusation(
   suspect: Suspect,
   weapon: Weapon,
   room: Room
-): GameState {
-  if (state.winner) return state;
-
+): { state: GameState; result: AccusationResultPayload } {
   const activePlayer = state.players[state.activePlayerIndex];
   const envelope = state.envelope;
 
@@ -477,6 +476,15 @@ export function makeAccusation(
     envelope.suspect === suspect &&
     envelope.weapon === weapon &&
     envelope.room === room;
+
+  const result: AccusationResultPayload = {
+    accuserPeerId: activePlayer.peerId,
+    accuserName: activePlayer.name,
+    accuserCharacter: activePlayer.character,
+    isCorrect,
+    accusation: { suspect, weapon, room },
+    envelope: { suspect: envelope.suspect, weapon: envelope.weapon, room: envelope.room },
+  };
 
   if (isCorrect) {
     // Instant Win!
@@ -491,10 +499,14 @@ export function makeAccusation(
     };
 
     return {
-      ...state,
-      winner: activePlayer,
-      phase: 'GAME_OVER',
-      logs: [...state.logs, winLog],
+      state: {
+        ...state,
+        winner: activePlayer,
+        phase: 'GAME_OVER',
+        lastAccusationResult: result,
+        logs: [...state.logs, winLog],
+      },
+      result,
     };
   } else {
     // Incorrect Accusation: Player eliminated from turns
@@ -502,7 +514,7 @@ export function makeAccusation(
       id: `log_${Date.now()}`,
       timestamp: Date.now(),
       type: 'FAIL_ACCUSE',
-      message: `WRONG ACCUSATION! ${activePlayer.name} accused ${suspect} in ${room} with ${weapon}. They have been permanently eliminated from solving the crime!`,
+      message: `WRONG ACCUSATION! ${activePlayer.name} accused ${suspect} in ${room} with ${weapon}. They have inspected the confidential envelope and are permanently eliminated from solving the crime!`,
       playerPeerId: activePlayer.peerId,
       playerName: activePlayer.name,
       playerCharacter: activePlayer.character,
@@ -523,19 +535,29 @@ export function makeAccusation(
       };
 
       return {
-        ...state,
-        players: updatedPlayers,
-        phase: 'GAME_OVER',
-        logs: [...state.logs, failLog, allFailLog],
+        state: {
+          ...state,
+          players: updatedPlayers,
+          phase: 'GAME_OVER',
+          lastAccusationResult: result,
+          logs: [...state.logs, failLog, allFailLog],
+        },
+        result,
       };
     }
 
     // Advance turn to next non-eliminated player
-    return endTurn({
+    const nextState = endTurn({
       ...state,
       players: updatedPlayers,
+      lastAccusationResult: result,
       logs: [...state.logs, failLog],
     });
+
+    return {
+      state: nextState,
+      result,
+    };
   }
 }
 
@@ -583,6 +605,28 @@ export function endTurn(state: GameState): GameState {
  * Strips confidential envelope & opponent hands from state before transmitting across WebRTC.
  */
 export function maskStateForPeer(masterState: GameState, recipientPeerId: string): MaskedGameState {
+  const recipientPlayer = masterState.players.find((p) => p.peerId === recipientPeerId);
+  const isEliminated = !!recipientPlayer?.hasAccusedWrongly;
+  const isGameOver = masterState.phase === 'GAME_OVER';
+
+  // Envelope solution is revealed if game is over OR if this player has been eliminated (they inspected the envelope)
+  const shouldRevealEnvelope = isGameOver || isEliminated;
+  const solution = shouldRevealEnvelope ? masterState.envelope : null;
+
+  // Accusation result:
+  // If game is over or recipient is the accuser or accusation was correct, send full result
+  let lastAccusationResult: AccusationResultPayload | null = null;
+  if (masterState.lastAccusationResult) {
+    if (
+      isGameOver ||
+      masterState.lastAccusationResult.accuserPeerId === recipientPeerId ||
+      masterState.lastAccusationResult.isCorrect ||
+      isEliminated
+    ) {
+      lastAccusationResult = masterState.lastAccusationResult;
+    }
+  }
+
   const maskedPlayers: MaskedPlayer[] = masterState.players.map((p) => {
     const isMe = p.peerId === recipientPeerId;
     return {
@@ -632,6 +676,8 @@ export function maskStateForPeer(masterState: GameState, recipientPeerId: string
     weaponPositions: masterState.weaponPositions,
     turnNumber: masterState.turnNumber,
     lastDisprovedCardForSuggester: filteredDisprovedCard,
+    lastAccusationResult,
+    solution,
     logs: masterState.logs,
     validMoves: masterState.players[masterState.activePlayerIndex]?.peerId === recipientPeerId ? masterState.validMoves : [],
     turnHasSuggested: masterState.turnHasSuggested,

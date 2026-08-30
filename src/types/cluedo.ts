@@ -85,6 +85,27 @@ export interface DisprovedCardPayload {
   suggesterPeerId: string;
 }
 
+export interface Envelope {
+  suspect: Suspect;
+  weapon: Weapon;
+  room: Room;
+}
+
+export type Solution = Envelope;
+
+export interface AccusationResultPayload {
+  accuserPeerId: string;
+  accuserName: string;
+  accuserCharacter?: Suspect;
+  isCorrect: boolean;
+  accusation: {
+    suspect: Suspect;
+    weapon: Weapon;
+    room: Room;
+  };
+  envelope: Envelope;
+}
+
 export interface GameLogEntry {
   id: string;
   timestamp: number;
@@ -123,6 +144,7 @@ export interface GameState {
   weaponPositions: Record<Weapon, Room>;
   turnNumber: number;
   lastDisprovedCardForSuggester?: DisprovedCardPayload | null;
+  lastAccusationResult?: AccusationResultPayload | null;
   logs: GameLogEntry[];
   validMoves?: Array<{ x: number; y: number; isDoorway?: boolean; targetRoom?: Room }>;
   turnHasSuggested?: boolean;
@@ -141,6 +163,12 @@ export interface MaskedGameState {
   weaponPositions: Record<Weapon, Room>;
   turnNumber: number;
   lastDisprovedCardForSuggester?: DisprovedCardPayload | null;
+  lastAccusationResult?: AccusationResultPayload | null;
+  solution?: {
+    suspect: Suspect;
+    weapon: Weapon;
+    room: Room;
+  } | null;
   logs: GameLogEntry[];
   validMoves?: Array<{ x: number; y: number; isDoorway?: boolean; targetRoom?: Room }>;
   turnHasSuggested?: boolean;
@@ -170,10 +198,10 @@ export const SUSPECT_COLORS: Record<Suspect, { bg: string; text: string; hex: st
 export const SUSPECT_STARTING_POSITIONS: Record<Suspect, { x: number; y: number }> = {
   'Miss Scarlet': { x: 16, y: 0 },
   'Colonel Mustard': { x: 23, y: 7 },
-  'Mrs. White': { x: 9, y: 24 },
-  'Mr. Green': { x: 14, y: 24 },
-  'Mrs. Peacock': { x: 0, y: 18 },
-  'Professor Plum': { x: 0, y: 5 },
+  'Mrs. White': { x: 8, y: 24 },
+  'Mr. Green': { x: 15, y: 24 },
+  'Mrs. Peacock': { x: 0, y: 17 },
+  'Professor Plum': { x: 0, y: 7 },
 };
 
 export const ALL_SUSPECTS: Suspect[] = [
@@ -224,5 +252,6 @@ export type NetworkPacket =
   | { type: 'CHAT_MESSAGE'; payload: { text: string } }
   | { type: 'SYNC_STATE'; payload: { maskedState: MaskedGameState } }
   | { type: 'DISPROVED_REVEAL'; payload: DisprovedCardPayload }
+  | { type: 'ACCUSATION_REVEAL'; payload: AccusationResultPayload }
   | { type: 'PING' }
   | { type: 'PONG' };
