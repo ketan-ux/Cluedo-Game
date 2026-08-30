@@ -8,6 +8,7 @@ interface DetectiveNotebookProps {
   onClose: () => void;
   myHand: Card[];
   players: MaskedPlayer[];
+  myPeerId?: string;
 }
 
 type CheckState = 'BLANK' | 'CHECK' | 'CROSS' | 'QUESTION';
@@ -17,24 +18,30 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
   onClose,
   myHand,
   players,
+  myPeerId,
 }) => {
-  // Grid state: Record<cardName, Record<playerPeerIdOrColumn, CheckState>>
+  // Grid state: Record<cardName, Record<playerPeerId, CheckState>>
   const [marks, setMarks] = useState<Record<string, Record<string, CheckState>>>({});
   const [customNotes, setCustomNotes] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'ALL' | 'SUSPECTS' | 'WEAPONS' | 'ROOMS'>('ALL');
 
-  // Pre-populate player's starting hand with checks
+  // Find local player ID
+  const localPlayer = players.find(
+    (p) => (myPeerId && p.peerId === myPeerId) || (p.hand !== undefined && myHand.length > 0)
+  );
+
+  // Pre-populate player's starting hand with checks in their own column
   useEffect(() => {
+    if (!localPlayer) return;
     setMarks((prev) => {
       const next = { ...prev };
       for (const card of myHand) {
         if (!next[card.name]) next[card.name] = {};
-        // Mark as eliminated/held in player's column
-        next[card.name]['MY_HAND'] = 'CHECK';
+        next[card.name][localPlayer.peerId] = 'CHECK';
       }
       return next;
     });
-  }, [myHand]);
+  }, [myHand, localPlayer]);
 
   // Keyboard shortcut Tab or N to toggle
   useEffect(() => {
@@ -84,10 +91,18 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
 
   if (!isOpen) return null;
 
-  const columns = [
-    { id: 'MY_HAND', label: 'My Cards' },
-    ...players.map((p) => ({ id: p.peerId, label: p.character.split(' ')[1] || p.character })),
-  ];
+  // Generate columns directly for each player in the match without artificial duplicate "Me"
+  const columns = players.map((p) => {
+    const isMe = (myPeerId && p.peerId === myPeerId) || (p.hand !== undefined && myHand.length > 0);
+    return {
+      id: p.peerId,
+      name: p.name,
+      character: p.character,
+      isMe,
+      label: isMe ? `${p.name} (You)` : p.name,
+      subLabel: p.character,
+    };
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
@@ -166,8 +181,18 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
                   <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
                     <th className="p-2 pl-3 w-48">Suspect Name</th>
                     {columns.map((col) => (
-                      <th key={col.id} className="p-2 text-center border-l border-[#b59d74]">
-                        {col.label}
+                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
+                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
+                          <span className="truncate max-w-[80px]">{col.name}</span>
+                          {col.isMe && (
+                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
+                              You
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
+                          {col.subLabel}
+                        </div>
                       </th>
                     ))}
                     <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>
@@ -226,8 +251,18 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
                   <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
                     <th className="p-2 pl-3 w-48">Weapon</th>
                     {columns.map((col) => (
-                      <th key={col.id} className="p-2 text-center border-l border-[#b59d74]">
-                        {col.label}
+                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
+                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
+                          <span className="truncate max-w-[80px]">{col.name}</span>
+                          {col.isMe && (
+                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
+                              You
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
+                          {col.subLabel}
+                        </div>
                       </th>
                     ))}
                     <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>
@@ -286,8 +321,18 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
                   <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
                     <th className="p-2 pl-3 w-48">Room</th>
                     {columns.map((col) => (
-                      <th key={col.id} className="p-2 text-center border-l border-[#b59d74]">
-                        {col.label}
+                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
+                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
+                          <span className="truncate max-w-[80px]">{col.name}</span>
+                          {col.isMe && (
+                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
+                              You
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
+                          {col.subLabel}
+                        </div>
                       </th>
                     ))}
                     <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>

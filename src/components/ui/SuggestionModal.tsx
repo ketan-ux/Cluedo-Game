@@ -15,6 +15,7 @@ interface SuggestionModalProps {
   currentRoom: Room;
   onSuggest: (suspect: Suspect, weapon: Weapon) => void;
   onPass: () => void;
+  onSkipAndEndTurn?: () => void;
 }
 
 export const SuggestionModal: React.FC<SuggestionModalProps> = ({
@@ -22,6 +23,7 @@ export const SuggestionModal: React.FC<SuggestionModalProps> = ({
   currentRoom,
   onSuggest,
   onPass,
+  onSkipAndEndTurn,
 }) => {
   const [selectedSuspect, setSelectedSuspect] = useState<Suspect>(ALL_SUSPECTS[0]);
   const [selectedWeapon, setSelectedWeapon] = useState<Weapon>(ALL_WEAPONS[0]);
@@ -154,20 +156,33 @@ export const SuggestionModal: React.FC<SuggestionModalProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
-          <button
-            type="button"
-            onClick={onPass}
-            className="px-4 py-2.5 rounded bg-[#1a0f0d] hover:bg-[#2d1b10] text-[#baa479] hover:text-[#f4e4bc] border border-[#d4af37]/30 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer"
-          >
-            Skip Suggestion
-          </button>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="flex items-center space-x-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={onPass}
+              className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded bg-[#1a0f0d] hover:bg-[#2d1b10] text-[#baa479] hover:text-[#f4e4bc] border border-[#d4af37]/30 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer"
+              title="Close modal to check notes or accuse later"
+            >
+              Skip (Keep Turn)
+            </button>
+
+            {onSkipAndEndTurn && (
+              <button
+                type="button"
+                onClick={onSkipAndEndTurn}
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded bg-[#3b2012] hover:bg-[#5c321d] text-[#f4e4bc] border border-[#d4af37]/40 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Skip & End Turn
+              </button>
+            )}
+          </div>
 
           <button
             id="submit-suggestion-btn"
             type="button"
             onClick={() => onSuggest(selectedSuspect, selectedWeapon)}
-            className="px-6 py-2.5 rounded bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-widest shadow-xl shadow-[#d4af37]/20 flex items-center space-x-2 transition-all cursor-pointer"
+            className="w-full sm:w-auto px-6 py-2.5 rounded bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-widest shadow-xl shadow-[#d4af37]/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
           >
             <span>Present Suggestion</span>
             <ArrowRight className="w-4 h-4" />

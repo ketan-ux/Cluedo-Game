@@ -223,16 +223,35 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
             gameState.phase === 'ROLL' &&
             !activePlayer?.hasAccusedWrongly;
 
+          // Check if this room has an accessible doorway in validMoves during MOVE phase
+          const reachableDoorway =
+            isMyTurn && gameState.phase === 'MOVE' && gameState.validMoves
+              ? gameState.validMoves.find(
+                  (m) =>
+                    m.targetRoom === roomName ||
+                    (m.isDoorway && def.doorways.some((d) => d.x === m.x && d.y === m.y))
+                )
+              : null;
+
           return (
             <div
               key={roomName}
               id={`room-overlay-${roomName.toLowerCase().replace(/[\s.]+/g, '_')}`}
+              onClick={() => {
+                if (reachableDoorway) {
+                  onTileClick(reachableDoorway.x, reachableDoorway.y);
+                }
+              }}
               style={{
                 gridColumn: `${colStart} / span ${colSpan}`,
                 gridRow: `${rowStart} / span ${rowSpan}`,
                 backgroundColor: def.themeColor,
               }}
-              className="relative z-10 m-[2px] rounded border-2 border-[#d4af37]/70 p-2 flex flex-col justify-between shadow-xl overflow-hidden group"
+              className={`relative z-10 m-[2px] rounded p-2 flex flex-col justify-between shadow-xl overflow-hidden group transition-all duration-300 ${
+                reachableDoorway
+                  ? 'border-2 border-[#ffd700] ring-2 ring-[#ffd700]/70 cursor-pointer shadow-[0_0_20px_rgba(255,215,0,0.5)] scale-[1.01]'
+                  : 'border-2 border-[#d4af37]/70'
+              }`}
             >
               {/* Subtle Room Texture & Lighting */}
               <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/60 pointer-events-none" />
@@ -243,10 +262,15 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
                   {roomName}
                 </span>
 
-                {/* Secret Passage Shortcut Button */}
-                {hasSecretPassage && (
+                {/* Secret Passage Shortcut Button or Enter Room Badge */}
+                {reachableDoorway ? (
+                  <span className="flex items-center space-x-1 px-2 py-0.5 rounded text-[9px] font-deco uppercase bg-[#d4af37] text-[#1a0f0d] font-bold animate-pulse shadow">
+                    <span>Enter Room →</span>
+                  </span>
+                ) : hasSecretPassage ? (
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (canUsePassage && onSecretPassageClick && def.secretPassageTo) {
                         onSecretPassageClick(def.secretPassageTo);
                       }
@@ -262,7 +286,7 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
                     <Sparkles className="w-2.5 h-2.5" />
                     <span>Passage → {def.secretPassageTo}</span>
                   </button>
-                )}
+                ) : null}
               </div>
 
               {/* Room Center Tokens & Weapons Container */}

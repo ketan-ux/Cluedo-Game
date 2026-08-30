@@ -57,6 +57,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isNotebookOpen, setIsNotebookOpen] = useState(false);
   const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
   const [isAccusationOpen, setIsAccusationOpen] = useState(false);
+  const [dismissedSuggestionTurn, setDismissedSuggestionTurn] = useState<number | null>(null);
 
   const activePlayer = gameState.players[gameState.activePlayerIndex];
   const isMyTurn = myPlayer?.peerId === activePlayer?.peerId;
@@ -69,6 +70,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Current room of active player
   const currentRoom = activePlayer?.position.room;
+
+  // Compute if suggestion modal should be open
+  const shouldOpenSuggestion =
+    isSuggestionOpen ||
+    (isMyTurn &&
+      gameState.phase === 'SUGGEST' &&
+      dismissedSuggestionTurn !== gameState.turnNumber &&
+      !!currentRoom);
 
   return (
     <div
@@ -156,19 +165,26 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         onClose={() => setIsNotebookOpen(false)}
         myHand={myHand}
         players={gameState.players}
+        myPeerId={myPlayer?.peerId}
       />
 
       {/* 2. Suggestion Modal */}
       {currentRoom && (
         <SuggestionModal
-          isOpen={isSuggestionOpen || (isMyTurn && gameState.phase === 'SUGGEST')}
+          isOpen={shouldOpenSuggestion}
           currentRoom={currentRoom}
           onSuggest={(suspect, weapon) => {
             setIsSuggestionOpen(false);
+            setDismissedSuggestionTurn(gameState.turnNumber);
             onMakeSuggestion(suspect, weapon);
           }}
           onPass={() => {
             setIsSuggestionOpen(false);
+            setDismissedSuggestionTurn(gameState.turnNumber);
+          }}
+          onSkipAndEndTurn={() => {
+            setIsSuggestionOpen(false);
+            setDismissedSuggestionTurn(gameState.turnNumber);
             onEndTurn();
           }}
         />
@@ -187,6 +203,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         payload={disprovedCardReveal}
         onClose={onCloseDisprovedReveal}
         onOpenNotebook={() => setIsNotebookOpen(true)}
+        onEndTurn={onEndTurn}
       />
 
       {/* 5. Accusation Modal */}

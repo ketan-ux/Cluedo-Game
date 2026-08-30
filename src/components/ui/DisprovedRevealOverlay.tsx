@@ -1,18 +1,20 @@
 import React from 'react';
 import { DisprovedCardPayload } from '../../types/cluedo';
 import { CardView } from './CardView';
-import { Search, CheckCircle, X } from 'lucide-react';
+import { Search, CheckCircle, ArrowRight } from 'lucide-react';
 
 interface DisprovedRevealOverlayProps {
   payload: DisprovedCardPayload | null;
   onClose: () => void;
   onOpenNotebook?: () => void;
+  onEndTurn?: () => void;
 }
 
 export const DisprovedRevealOverlay: React.FC<DisprovedRevealOverlayProps> = ({
   payload,
   onClose,
   onOpenNotebook,
+  onEndTurn,
 }) => {
   if (!payload) return null;
 
@@ -49,27 +51,41 @@ export const DisprovedRevealOverlay: React.FC<DisprovedRevealOverlayProps> = ({
         </p>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-3 pt-2 w-full">
+        <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2 w-full">
           {onOpenNotebook && (
             <button
               onClick={() => {
                 onClose();
                 onOpenNotebook();
               }}
-              className="flex-1 py-2.5 rounded bg-[#1a0f0d] hover:bg-[#2d1b10] text-[#f4e4bc] border border-[#d4af37]/40 font-deco text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              className="w-full sm:w-auto flex-1 py-2.5 rounded bg-[#1a0f0d] hover:bg-[#2d1b10] text-[#f4e4bc] border border-[#d4af37]/40 font-deco text-xs uppercase tracking-wider transition-colors cursor-pointer"
             >
-              Open Detective Ledger
+              Open Ledger
             </button>
           )}
 
           <button
             id="close-reveal-btn"
             onClick={onClose}
-            className="flex-1 py-2.5 rounded bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-widest shadow-lg shadow-[#d4af37]/20 flex items-center justify-center space-x-1.5 cursor-pointer"
+            className="w-full sm:w-auto flex-1 py-2.5 rounded bg-[#3b2012] hover:bg-[#5c321d] text-[#f4e4bc] border border-[#d4af37]/40 font-deco text-xs uppercase tracking-wider flex items-center justify-center space-x-1.5 cursor-pointer"
           >
-            <CheckCircle className="w-4 h-4" />
+            <CheckCircle className="w-4 h-4 text-[#d4af37]" />
             <span>Got It</span>
           </button>
+
+          {onEndTurn && (
+            <button
+              id="close-and-end-turn-btn"
+              onClick={() => {
+                onClose();
+                onEndTurn();
+              }}
+              className="w-full sm:w-auto flex-1 py-2.5 rounded bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-widest shadow-lg shadow-[#d4af37]/20 flex items-center justify-center space-x-1.5 cursor-pointer"
+            >
+              <span>End Turn</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>

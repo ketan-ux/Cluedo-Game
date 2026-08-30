@@ -19,6 +19,8 @@ import {
   Scroll,
   Volume2,
   VolumeX,
+  ArrowRight,
+  UserCheck,
 } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
@@ -221,6 +223,21 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
           </button>
         )}
 
+        {/* Phase Context Banner / Hint when on my turn */}
+        {isMyTurn && !isEliminated && gameState.phase === 'MOVE' && (
+          <div className="p-2 rounded bg-[#251610] border border-[#d4af37]/40 flex items-center justify-between text-xs">
+            <span className="text-[#f4e4bc] font-serif-vintage italic">
+              Click a golden tile or room on the board to move.
+            </span>
+            <button
+              onClick={onEndTurn}
+              className="px-2.5 py-1 rounded bg-[#3b2012] hover:bg-[#5c321d] text-[#d4af37] text-[10px] font-deco font-bold uppercase tracking-wider border border-[#d4af37]/30 transition-colors cursor-pointer"
+            >
+              Skip Move
+            </button>
+          </div>
+        )}
+
         {/* Suggestion / Accusation / End Turn Row */}
         <div className="grid grid-cols-3 gap-2">
           {/* Suggest Button */}
@@ -234,7 +251,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
               isEliminated
             }
             onClick={onOpenSuggestion}
-            className={`py-2 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
+            className={`py-2.5 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
               isMyTurn && (gameState.phase === 'SUGGEST' || (gameState.phase === 'ACCUSE' && !gameState.turnHasSuggested && !!currentRoom)) && !isEliminated
                 ? 'bg-[#2e4a36] hover:bg-[#3c6147] text-[#f4e4bc] border border-emerald-500/50 cursor-pointer shadow'
                 : 'bg-[#251610] text-[#5c3e29] border border-[#381f13] cursor-not-allowed'
@@ -248,7 +265,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
             id="accuse-btn"
             disabled={!isMyTurn || gameState.phase === 'LOBBY' || gameState.phase === 'GAME_OVER' || isEliminated}
             onClick={onOpenAccusation}
-            className={`py-2 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
+            className={`py-2.5 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
               isMyTurn && !isEliminated
                 ? 'bg-[#9b111e] hover:bg-[#b21827] text-white border border-[#d4af37]/50 shadow-[0_0_12px_rgba(155,17,30,0.5)] cursor-pointer'
                 : 'bg-[#251610] text-[#5c3e29] border border-[#381f13] cursor-not-allowed'
@@ -261,15 +278,28 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
           {/* End Turn Button */}
           <button
             id="end-turn-btn"
-            disabled={!isMyTurn || (gameState.phase !== 'ACCUSE' && gameState.phase !== 'SUGGEST') || isEliminated}
+            disabled={
+              !isMyTurn ||
+              gameState.phase === 'DISPROVE' ||
+              gameState.phase === 'LOBBY' ||
+              gameState.phase === 'GAME_OVER' ||
+              isEliminated
+            }
             onClick={onEndTurn}
-            className={`py-2 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
-              isMyTurn && (gameState.phase === 'ACCUSE' || gameState.phase === 'SUGGEST') && !isEliminated
-                ? 'border border-[#d4af37]/50 text-[#d4af37] hover:bg-[#d4af37]/15 cursor-pointer shadow'
+            className={`py-2.5 px-2 rounded font-deco text-[10px] uppercase tracking-wider font-bold flex items-center justify-center space-x-1 transition-all ${
+              isMyTurn &&
+              gameState.phase !== 'DISPROVE' &&
+              gameState.phase !== 'LOBBY' &&
+              gameState.phase !== 'GAME_OVER' &&
+              !isEliminated
+                ? gameState.phase === 'ACCUSE'
+                  ? 'bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-lg shadow-[#d4af37]/20 font-black cursor-pointer'
+                  : 'border border-[#d4af37]/60 text-[#f4e4bc] bg-[#2d1b10] hover:bg-[#3d2516] cursor-pointer shadow'
                 : 'bg-[#251610] text-[#5c3e29] border border-[#381f13] cursor-not-allowed'
             }`}
           >
             <span>End Turn</span>
+            <ArrowRight className="w-3 h-3" />
           </button>
         </div>
       </div>
