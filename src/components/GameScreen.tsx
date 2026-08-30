@@ -186,8 +186,55 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             />
           </div>
 
-          {/* On-Board Turn Completed Action Bar when Actions are Done */}
-          {isMyTurn && gameState.phase === 'ACCUSE' && (
+          {/* On-Board Turn Action Bars when in Room or Turn Actions Done */}
+          {isMyTurn && !myPlayer?.hasAccusedWrongly && !!currentRoom && !gameState.turnHasSuggested && (gameState.phase === 'SUGGEST' || gameState.phase === 'ACCUSE') && (
+            <div className="w-full max-w-2xl p-2.5 rounded-xl bg-gradient-to-r from-[#1b2b1d] via-[#2d1b10] to-[#1b2b1d] border-2 border-emerald-500/70 shadow-[0_6px_24px_rgba(0,0,0,0.85)] flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-fade-in flex-shrink-0">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-emerald-950/80 border border-emerald-500 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                  <span className="text-base">🏛️</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-deco font-bold text-[#f4e4bc] uppercase tracking-wider truncate">
+                    Inside the <span className="text-[#d4af37]">{currentRoom}</span>
+                  </p>
+                  <p className="text-[10px] text-[#baa479] font-serif-vintage italic truncate">
+                    Inspect cards, formulate a theory, accuse, or pass your turn.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 flex-shrink-0 w-full sm:w-auto justify-end">
+                <button
+                  id="board-suggest-btn"
+                  onClick={() => setIsSuggestionOpen(true)}
+                  className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white font-deco font-bold text-xs uppercase tracking-wider border border-emerald-400/80 shadow-md shadow-emerald-950/50 flex items-center justify-center space-x-1.5 transition-all cursor-pointer transform hover:scale-105 active:scale-95"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                  <span>Make Suggestion</span>
+                </button>
+
+                <button
+                  id="board-accuse-btn"
+                  onClick={() => setIsAccusationOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-[#9b111e] hover:bg-[#b81424] text-white font-deco font-bold text-xs uppercase tracking-wider border border-[#d4af37]/40 transition-colors cursor-pointer"
+                  title="Make a Final Accusation"
+                >
+                  Accuse
+                </button>
+
+                <button
+                  id="board-pass-turn-btn"
+                  onClick={onEndTurn}
+                  className="px-3 py-1.5 rounded-lg bg-[#3b2012] hover:bg-[#5c321d] text-[#baa479] hover:text-[#f4e4bc] border border-[#d4af37]/30 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer flex items-center space-x-1"
+                >
+                  <span>Pass</span>
+                  <ArrowRight className="w-3 h-3 text-[#d4af37]" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isMyTurn && !myPlayer?.hasAccusedWrongly && (gameState.turnHasSuggested || !currentRoom) && gameState.phase === 'ACCUSE' && (
             <div className="w-full max-w-xl p-2.5 rounded-xl bg-gradient-to-r from-[#22120b] via-[#351a0e] to-[#22120b] border-2 border-[#d4af37] shadow-[0_6px_24px_rgba(0,0,0,0.85)] flex items-center justify-between gap-3 animate-fade-in flex-shrink-0">
               <div className="flex items-center space-x-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-full bg-[#d4af37]/20 border border-[#d4af37] flex items-center justify-center text-[#d4af37] flex-shrink-0">
@@ -265,6 +312,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <SuggestionModal
           isOpen={shouldOpenSuggestion}
           currentRoom={currentRoom}
+          myHand={myHand}
+          onOpenNotebook={() => setIsNotebookOpen(true)}
           onSuggest={(suspect, weapon) => {
             setIsSuggestionOpen(false);
             setDismissedSuggestionTurn(gameState.turnNumber);
@@ -301,6 +350,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {/* 5. Accusation Modal */}
       <AccusationModal
         isOpen={isAccusationOpen}
+        myHand={myHand}
+        onOpenNotebook={() => setIsNotebookOpen(true)}
         onAccuse={(suspect, weapon, room) => {
           setIsAccusationOpen(false);
           onMakeAccusation(suspect, weapon, room);

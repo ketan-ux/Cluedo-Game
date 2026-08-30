@@ -106,7 +106,7 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 animate-fade-in">
       <div
         id="detective-notebook-modal"
         className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-[#5a381e] parchment-texture text-[#2b1f17]"

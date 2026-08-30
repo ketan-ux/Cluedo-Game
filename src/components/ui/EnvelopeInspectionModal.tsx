@@ -39,7 +39,7 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
   const roomMatch = accusation.room === envelope.room;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 animate-fade-in overflow-y-auto">
       <div
         id="envelope-inspection-modal"
         className={`relative w-full max-w-2xl rounded-2xl bg-[#20130d] border-2 ${

@@ -34,7 +34,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const roomCard = solution ? getCardByName(solution.room) : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 animate-fade-in overflow-y-auto">
       <div
         id="game-over-modal"
         className="relative w-full max-w-xl rounded-2xl bg-[#251610] border-2 border-[#d4af37] p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.95)] text-[#f4e4bc] flex flex-col items-center text-center space-y-5"

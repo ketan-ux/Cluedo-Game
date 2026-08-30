@@ -29,7 +29,7 @@ export const DisproveModal: React.FC<DisproveModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 animate-fade-in">
       <div
         id="disprove-modal"
         className="relative w-full max-w-2xl rounded-2xl bg-[#251610] border-2 border-[#d4af37] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.9)] text-[#f4e4bc] flex flex-col space-y-6"
