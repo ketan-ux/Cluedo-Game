@@ -82,7 +82,7 @@ export const DisprovedRevealOverlay: React.FC<DisprovedRevealOverlayProps> = ({
               }}
               className="w-full sm:w-auto flex-1 py-2.5 rounded bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-widest shadow-lg shadow-[#d4af37]/20 flex items-center justify-center space-x-1.5 cursor-pointer"
             >
-              <span>End Turn</span>
+              <span>Got It & Pass Turn</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           )}

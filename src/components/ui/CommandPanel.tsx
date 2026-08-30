@@ -56,6 +56,16 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
   const activePlayer = gameState.players[gameState.activePlayerIndex];
   const isEliminated = myPlayer?.hasAccusedWrongly;
 
+  // Next player in turn order
+  const numPlayers = gameState.players.length;
+  let nextIdx = (gameState.activePlayerIndex + 1) % numPlayers;
+  let attempts = 0;
+  while (gameState.players[nextIdx]?.hasAccusedWrongly && attempts < numPlayers) {
+    nextIdx = (nextIdx + 1) % numPlayers;
+    attempts++;
+  }
+  const nextPlayer = gameState.players[nextIdx];
+
   // Secret passage availability
   const currentRoom = myPlayer?.position.room;
   const secretPassageTarget = currentRoom ? SECRET_PASSAGES[currentRoom] : null;
@@ -167,7 +177,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
               {gameState.phase === 'MOVE' && `Moving (${gameState.remainingSteps} steps left)`}
               {gameState.phase === 'SUGGEST' && 'Formulating Suggestion'}
               {gameState.phase === 'DISPROVE' && 'Refuting Evidence'}
-              {gameState.phase === 'ACCUSE' && 'Final Accusations'}
+              {gameState.phase === 'ACCUSE' && (isMyTurn ? 'Turn Actions Done • Accuse or Pass Turn' : 'Accuse or Pass Turn')}
               {gameState.phase === 'GAME_OVER' && 'Investigation Closed'}
             </strong>
           </span>
@@ -184,6 +194,47 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
 
       {/* 3. Action Command Center Buttons */}
       <div className="p-3.5 bg-[#1a0f0d] border-b border-[#d4af37]/30 flex flex-col space-y-2.5">
+        {/* Prominent High-Priority Pass Turn / Accuse Callout when Turn Actions are complete */}
+        {isMyTurn && !isEliminated && gameState.phase === 'ACCUSE' && (
+          <div className="p-3 rounded-xl bg-gradient-to-r from-[#2b170e] via-[#3a2012] to-[#2b170e] border-2 border-[#d4af37] shadow-[0_4px_20px_rgba(212,175,55,0.25)] flex flex-col space-y-2 animate-fade-in">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-deco font-bold text-[#f4e4bc] uppercase tracking-wider flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" />
+                <span>Turn Complete</span>
+              </span>
+              {nextPlayer && (
+                <span className="text-[10px] font-mono text-[#d4af37]">
+                  Next: {nextPlayer.name} ({nextPlayer.character})
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] font-serif-vintage italic text-[#baa479]">
+              Movement & suggestion complete. Pass the turn to the next detective or make an accusation.
+            </p>
+
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                id="pass-turn-prominent-btn"
+                onClick={onEndTurn}
+                className="flex-1 py-2.5 px-3 rounded-lg bg-[#d4af37] hover:bg-[#e6c24d] text-[#1a0f0d] font-deco font-black text-xs uppercase tracking-wider shadow-lg shadow-[#d4af37]/30 flex items-center justify-center space-x-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <span>Pass Turn to {nextPlayer?.name || 'Next Detective'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={onOpenAccusation}
+                className="py-2.5 px-3 rounded-lg bg-[#9b111e] hover:bg-[#b81424] text-white font-deco font-bold text-xs uppercase tracking-wider border border-[#d4af37]/60 shadow flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
+                title="Make a Final Accusation"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                <span>Accuse</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           {/* Roll Dice Button */}
           <button

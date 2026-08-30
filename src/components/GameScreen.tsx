@@ -17,7 +17,7 @@ import { DisproveModal } from './ui/DisproveModal';
 import { DisprovedRevealOverlay } from './ui/DisprovedRevealOverlay';
 import { AccusationModal } from './ui/AccusationModal';
 import { GameOverModal } from './ui/GameOverModal';
-import { BookOpen, LogOut, Sparkles } from 'lucide-react';
+import { BookOpen, LogOut, Sparkles, ArrowRight } from 'lucide-react';
 
 interface GameScreenProps {
   gameState: MaskedGameState;
@@ -61,6 +61,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const activePlayer = gameState.players[gameState.activePlayerIndex];
   const isMyTurn = myPlayer?.peerId === activePlayer?.peerId;
+
+  // Next player in turn order
+  const numPlayers = gameState.players.length;
+  let nextIdx = (gameState.activePlayerIndex + 1) % numPlayers;
+  let attempts = 0;
+  while (gameState.players[nextIdx]?.hasAccusedWrongly && attempts < numPlayers) {
+    nextIdx = (nextIdx + 1) % numPlayers;
+    attempts++;
+  }
+  const nextPlayer = gameState.players[nextIdx];
 
   // Check if I am the queried disprover
   const amIPendingDisprover =
@@ -131,6 +141,43 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               onSecretPassageClick={(targetRoom) => onUseSecretPassage(targetRoom)}
             />
           </div>
+
+          {/* On-Board Turn Completed Action Bar when Actions are Done */}
+          {isMyTurn && gameState.phase === 'ACCUSE' && (
+            <div className="w-full max-w-xl p-2.5 rounded-xl bg-gradient-to-r from-[#22120b] via-[#351a0e] to-[#22120b] border-2 border-[#d4af37] shadow-[0_6px_24px_rgba(0,0,0,0.85)] flex items-center justify-between gap-3 animate-fade-in flex-shrink-0">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-[#d4af37]/20 border border-[#d4af37] flex items-center justify-center text-[#d4af37] flex-shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-deco font-bold text-[#f4e4bc] uppercase tracking-wider truncate">
+                    Turn Actions Done
+                  </p>
+                  <p className="text-[10px] text-[#baa479] font-serif-vintage italic truncate">
+                    Pass turn to <strong className="text-[#d4af37] not-italic">{nextPlayer?.name || 'next player'}</strong> ({nextPlayer?.character})
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 flex-shrink-0">
+                <button
+                  onClick={() => setIsAccusationOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-[#9b111e] hover:bg-[#b81424] text-white font-deco font-bold text-[10px] uppercase tracking-wider border border-[#d4af37]/40 transition-colors cursor-pointer"
+                  title="Make a Final Accusation"
+                >
+                  Accuse
+                </button>
+                <button
+                  id="board-pass-turn-btn"
+                  onClick={onEndTurn}
+                  className="px-4 py-1.5 rounded-lg bg-[#d4af37] hover:bg-[#e6c24d] text-[#1a0f0d] font-deco font-black text-xs uppercase tracking-wider shadow-lg shadow-[#d4af37]/30 flex items-center space-x-1.5 transition-all cursor-pointer transform hover:scale-105 active:scale-95"
+                >
+                  <span>Pass Turn</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Bottom Docked Hand Tray */}
           <div className="w-full flex-shrink-0">

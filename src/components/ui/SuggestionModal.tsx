@@ -171,9 +171,10 @@ export const SuggestionModal: React.FC<SuggestionModalProps> = ({
               <button
                 type="button"
                 onClick={onSkipAndEndTurn}
-                className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded bg-[#3b2012] hover:bg-[#5c321d] text-[#f4e4bc] border border-[#d4af37]/40 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded bg-[#3b2012] hover:bg-[#5c321d] text-[#f4e4bc] border border-[#d4af37]/40 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center space-x-1"
               >
-                Skip & End Turn
+                <span>Skip & Pass Turn</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#d4af37]" />
               </button>
             )}
           </div>

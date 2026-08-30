@@ -25,10 +25,11 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
   const [customNotes, setCustomNotes] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'ALL' | 'SUSPECTS' | 'WEAPONS' | 'ROOMS'>('ALL');
 
-  // Find local player ID
-  const localPlayer = players.find(
-    (p) => (myPeerId && p.peerId === myPeerId) || (p.hand !== undefined && myHand.length > 0)
-  );
+  // Find local player ID with strict priority: exact peerId match first, then single player with non-empty hand
+  const localPlayer =
+    (myPeerId && players.find((p) => p.peerId === myPeerId)) ||
+    players.find((p) => Array.isArray(p.hand) && p.hand.length > 0 && p.hand === myHand) ||
+    (players.length === 1 ? players[0] : undefined);
 
   // Pre-populate player's starting hand with checks in their own column
   useEffect(() => {
@@ -91,9 +92,9 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
 
   if (!isOpen) return null;
 
-  // Generate columns directly for each player in the match without artificial duplicate "Me"
+  // Generate columns directly for each player in the match: exactly ONE player gets 'isMe' and '(You)'
   const columns = players.map((p) => {
-    const isMe = (myPeerId && p.peerId === myPeerId) || (p.hand !== undefined && myHand.length > 0);
+    const isMe = localPlayer ? p.peerId === localPlayer.peerId : Boolean(myPeerId && p.peerId === myPeerId);
     return {
       id: p.peerId,
       name: p.name,
