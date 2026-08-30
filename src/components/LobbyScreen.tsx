@@ -279,7 +279,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       <div className="text-center space-y-2">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-[#1a0f0d] border border-[#d4af37]/50 text-xs font-deco tracking-widest uppercase text-[#d4af37] mb-1">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>WebRTC P2P Multiplayer • 1920s Art Deco Noir</span>
+          <span>Worldwide Multiplayer • Real-Time Cross-Network Sync</span>
         </div>
         <h1 className="font-deco font-black text-3xl sm:text-4xl text-[#f4e4bc] tracking-wider uppercase">
           CLUEDO: BODDY MANOR

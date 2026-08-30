@@ -11,7 +11,7 @@ import {
 } from '../types/cluedo';
 import { P2PHostServer } from './p2pServer';
 import { P2PGuestClient } from './p2pClient';
-import { formatRoomCode, generateRoomCode } from './peerProtocol';
+import { formatRoomCode, generateRoomCode, getHostPeerId } from './peerProtocol';
 import { sounds } from '../utils/audio';
 
 export function useCluedoGame() {
@@ -65,7 +65,7 @@ export function useCluedoGame() {
         });
 
         hostServerRef.current = server;
-        setMyPeerId(`cluedo-noir-v1-host-${code}`);
+        setMyPeerId(getHostPeerId(code));
       } catch (err: any) {
         setErrorMessage(err.message || 'Failed to create host room');
         setStatus('ERROR');

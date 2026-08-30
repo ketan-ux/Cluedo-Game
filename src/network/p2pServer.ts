@@ -26,7 +26,7 @@ import {
   rollDice,
   useSecretPassage,
 } from '../engine/cluedoEngine';
-import { getHostPeerId } from './peerProtocol';
+import { getHostPeerId, getWsUrl, GLOBAL_ICE_SERVERS } from './peerProtocol';
 import { ROOM_DEFINITIONS } from '../engine/boardGrid';
 
 export interface ServerCallbacks {
@@ -39,6 +39,10 @@ export interface ServerCallbacks {
 
 export class P2PHostServer {
   private peer: Peer | null = null;
+  private ws: WebSocket | null = null;
+  private wsConnected: boolean = false;
+  private wsReconnectTimeout: any = null;
+  private isDestroyed: boolean = false;
   private connections: Map<string, DataConnection> = new Map();
   private masterState: GameState | null = null;
   private roomCode: string;
@@ -60,23 +64,105 @@ export class P2PHostServer {
   }
 
   private initializeLobby() {
-    this.peer = new Peer(this.hostPeerId, {
-      debug: 1,
-    });
+    this.setupLobbyState();
+    this.connectWebSocket();
+    this.initPeerJs();
+  }
 
-    this.peer.on('open', (id) => {
-      console.log('[P2P Server] Host peer opened with ID:', id);
-      this.setupLobbyState();
-    });
+  private connectWebSocket() {
+    if (this.isDestroyed) return;
+    const wsUrl = getWsUrl();
+    if (!wsUrl) return;
 
-    this.peer.on('connection', (conn) => {
-      this.handleIncomingConnection(conn);
-    });
+    try {
+      this.ws = new WebSocket(wsUrl);
 
-    this.peer.on('error', (err) => {
-      console.error('[P2P Server] Peer error:', err);
-      this.callbacks.onError(err);
-    });
+      this.ws.onopen = () => {
+        console.log('[P2P Server WS] Connected to global relay');
+        this.wsConnected = true;
+        this.sendWs({
+          type: 'HOST_REGISTER',
+          roomCode: this.roomCode,
+          payload: { hostPeerId: this.hostPeerId },
+        });
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'HOST_REGISTERED') {
+            console.log('[P2P Server WS] Room is registered globally:', this.roomCode);
+          } else if (msg.type === 'CLIENT_CONNECTED') {
+            console.log('[P2P Server WS] Remote guest connected:', msg.peerId);
+            this.callbacks.onClientConnected?.(msg.peerId);
+            if (this.masterState) {
+              this.broadcastState();
+            }
+          } else if (msg.type === 'CLIENT_DISCONNECTED') {
+            console.log('[P2P Server WS] Remote guest disconnected:', msg.peerId);
+            this.callbacks.onClientDisconnected?.(msg.peerId);
+            if (this.masterState) {
+              if (this.masterState.phase === 'LOBBY') {
+                this.masterState.players = this.masterState.players.filter((p) => p.peerId !== msg.peerId);
+              } else {
+                const player = this.masterState.players.find((p) => p.peerId === msg.peerId);
+                if (player) player.isConnected = false;
+              }
+              this.broadcastState();
+            }
+          } else if (msg.type === 'GUEST_PACKET') {
+            this.processPacket(msg.fromPeerId, msg.packet);
+          }
+        } catch (err) {
+          console.error('[P2P Server WS] Error handling WS packet:', err);
+        }
+      };
+
+      this.ws.onclose = () => {
+        this.wsConnected = false;
+        if (!this.isDestroyed) {
+          console.log('[P2P Server WS] Disconnected from relay, reconnecting in 2.5s...');
+          this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 2500);
+        }
+      };
+
+      this.ws.onerror = (err) => {
+        console.warn('[P2P Server WS] WebSocket notice:', err);
+      };
+    } catch (err) {
+      console.warn('[P2P Server WS] Failed to init WebSocket relay:', err);
+    }
+  }
+
+  private sendWs(msg: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    }
+  }
+
+  private initPeerJs() {
+    try {
+      this.peer = new Peer(this.hostPeerId, {
+        debug: 1,
+        config: {
+          iceServers: GLOBAL_ICE_SERVERS,
+        },
+      });
+
+      this.peer.on('open', (id) => {
+        console.log('[P2P Server WebRTC] Host peer opened with ID:', id);
+      });
+
+      this.peer.on('connection', (conn) => {
+        this.handleIncomingConnection(conn);
+      });
+
+      this.peer.on('error', (err) => {
+        console.warn('[P2P Server WebRTC] Peer notice (Relay active):', err);
+      });
+    } catch (err) {
+      console.warn('[P2P Server WebRTC] PeerJS init error (WebSocket active):', err);
+    }
   }
 
   private setupLobbyState() {
@@ -370,9 +456,23 @@ export class P2PHostServer {
 
           if (suggesterPeerId === this.hostPeerId) {
             this.callbacks.onDisprovedCardPrivate?.(disprovedPayload);
-          } else {
-            const suggesterConn = this.connections.get(suggesterPeerId!);
-            if (suggesterConn) {
+          } else if (suggesterPeerId) {
+            // 1. Send via WebSocket Relay
+            this.sendWs({
+              type: 'HOST_TO_GUEST',
+              roomCode: this.roomCode,
+              payload: {
+                targetPeerId: suggesterPeerId,
+                packet: {
+                  type: 'DISPROVED_REVEAL',
+                  payload: disprovedPayload,
+                },
+              },
+            });
+
+            // 2. Send via WebRTC DataConnection if open
+            const suggesterConn = this.connections.get(suggesterPeerId);
+            if (suggesterConn && suggesterConn.open) {
               suggesterConn.send({
                 type: 'DISPROVED_REVEAL',
                 payload: disprovedPayload,
@@ -443,10 +543,28 @@ export class P2PHostServer {
     const hostMasked = maskStateForPeer(this.masterState, this.hostPeerId);
     this.callbacks.onStateUpdate(hostMasked);
 
-    // Send masked state to each connected peer
-    for (const [peerId, conn] of this.connections.entries()) {
-      if (conn.open) {
-        const peerMasked = maskStateForPeer(this.masterState, peerId);
+    // Send personalized masked state to each remote player
+    for (const player of this.masterState.players) {
+      if (player.peerId === this.hostPeerId || player.isAi) continue;
+
+      const peerMasked = maskStateForPeer(this.masterState, player.peerId);
+
+      // 1. Send via WebSocket relay (100% reliable worldwide across different networks)
+      this.sendWs({
+        type: 'HOST_TO_GUEST',
+        roomCode: this.roomCode,
+        payload: {
+          targetPeerId: player.peerId,
+          packet: {
+            type: 'SYNC_STATE',
+            payload: { maskedState: peerMasked },
+          },
+        },
+      });
+
+      // 2. Send via direct WebRTC connection if open
+      const conn = this.connections.get(player.peerId);
+      if (conn && conn.open) {
         conn.send({
           type: 'SYNC_STATE',
           payload: { maskedState: peerMasked },
@@ -552,6 +670,12 @@ export class P2PHostServer {
   }
 
   public destroy() {
+    this.isDestroyed = true;
+    if (this.wsReconnectTimeout) clearTimeout(this.wsReconnectTimeout);
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
     if (this.aiActionTimeout) clearTimeout(this.aiActionTimeout);
     for (const conn of this.connections.values()) {
       conn.close();
