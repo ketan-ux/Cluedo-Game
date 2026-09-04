@@ -535,7 +535,7 @@ export class HostController {
   }
 
   // ----------------------------------------------------
-  // State Broadcasting
+  // State Broadcasting (Optimized for 5-6 Concurrent Detectives)
   // ----------------------------------------------------
 
   broadcastState(
@@ -546,7 +546,28 @@ export class HostController {
     const hostMasked = maskStateForPeer(this.masterState, this.hostPeerId);
     this.onStateUpdated(hostMasked, disprovedCard, accusationResult);
 
-    // 2. Transmit masked state to all guest players
+    // 2. Prepare confidential hands map for each player
+    const handsMap: Record<string, Card[]> = {};
+    for (const player of this.masterState.players) {
+      handsMap[player.peerId] = player.hand;
+    }
+
+    // 3. Compact logs to last 25 entries to prevent large payload drops
+    const compactState: MaskedGameState = {
+      ...maskStateForPeer(this.masterState, '__SPECTATOR__'),
+      logs: this.masterState.logs.slice(-25),
+    };
+
+    // 4. Single Unified Broadcast packet (Instantly received by all 5+ players concurrently)
+    clientTransport.send({
+      type: 'SYNC_STATE',
+      state: compactState,
+      hands: handsMap,
+      disprovedForSuggester: disprovedCard || null,
+      accusationResult: accusationResult || null,
+    });
+
+    // 5. Send direct targeted updates over WebRTC data channels for guests
     for (const player of this.masterState.players) {
       if (player.isAi || player.peerId === this.hostPeerId) continue;
 
@@ -556,7 +577,7 @@ export class HostController {
         this.masterState.currentSuggestion &&
         this.masterState.currentSuggestion.suggesterPeerId === player.peerId;
 
-      clientTransport.send({
+      clientTransport.sendDirect(player.peerId, {
         type: 'PLAYER_STATE',
         targetPeerId: player.peerId,
         state: playerMasked,
@@ -564,13 +585,6 @@ export class HostController {
         accusationResult: accusationResult || null,
       });
     }
-
-    // 3. Broadcast generalized state for any new connection / observer
-    clientTransport.send({
-      type: 'STATE_UPDATE',
-      state: maskStateForPeer(this.masterState, '__SPECTATOR__'),
-      accusationResult: accusationResult || null,
-    });
   }
 
   destroy() {

@@ -23,6 +23,7 @@ import {
   UserCheck,
   Eye,
   ShieldAlert,
+  Users,
 } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
@@ -194,6 +195,67 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
         ) : (
           <span className="text-[#baa479] italic">{activePlayer?.name}'s Turn</span>
         )}
+      </div>
+
+      {/* 2.5 Active Detective Roster (Turn Order & Status for all 5-6 Players) */}
+      <div className="px-3 py-2 bg-[#1f120c] border-b border-[#d4af37]/20 flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="flex items-center space-x-1.5 flex-shrink-0">
+          <Users className="w-3.5 h-3.5 text-[#d4af37]" />
+          <span className="text-[10px] font-deco uppercase tracking-wider text-[#baa479]">
+            Detectives ({gameState.players.length}):
+          </span>
+        </div>
+
+        <div className="flex items-center space-x-2 flex-nowrap min-w-0">
+          {gameState.players.map((player, idx) => {
+            const isActive = idx === gameState.activePlayerIndex;
+            const isMe = player.peerId === myPlayer?.peerId;
+            const isPlayerEliminated = player.hasAccusedWrongly;
+            const hexColor = SUSPECT_COLORS[player.character]?.hex || '#9b111e';
+            const cardCount = player.hand?.length ?? player.cardCount ?? 3;
+
+            return (
+              <div
+                key={player.peerId}
+                className={`relative flex items-center space-x-1 px-1.5 py-0.5 rounded-lg border transition-all flex-shrink-0 cursor-default ${
+                  isActive
+                    ? 'bg-[#3d2012] border-[#d4af37] ring-1 ring-[#d4af37] shadow-[0_0_8px_rgba(212,175,55,0.4)]'
+                    : isPlayerEliminated
+                    ? 'bg-[#150a08] border-red-900/40 opacity-60'
+                    : 'bg-[#150d09] border-[#d4af37]/20 hover:border-[#d4af37]/50'
+                }`}
+                title={`${player.name} (${player.character})${isMe ? ' [YOU]' : ''}${isPlayerEliminated ? ' [ELIMINATED]' : ''} • Cards: ${cardCount} • Location: ${player.position.room || 'Corridor'}`}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow flex-shrink-0"
+                  style={{ backgroundColor: hexColor }}
+                >
+                  {player.character.charAt(0)}
+                </div>
+
+                <span
+                  className={`text-[10px] font-deco truncate max-w-[64px] ${
+                    isActive
+                      ? 'text-[#f4e4bc] font-bold'
+                      : isPlayerEliminated
+                      ? 'text-red-400 line-through'
+                      : 'text-[#baa479]'
+                  }`}
+                >
+                  {isMe ? 'You' : player.name.split(' ')[0]}
+                </span>
+
+                <span className="text-[9px] font-mono px-1 rounded bg-[#0d0705] text-[#d4af37]/90 border border-[#d4af37]/30">
+                  {cardCount}
+                </span>
+
+                {isActive && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#d4af37] animate-ping" />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* 3. Action Command Center Buttons */}

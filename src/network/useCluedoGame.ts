@@ -138,6 +138,43 @@ export function useCluedoGame() {
           return;
         }
 
+        // 5-Player Unified Broadcast Synchronizer
+        if (payload.type === 'SYNC_STATE' && payload.state) {
+          const isPlayerInState = payload.state.players.some((p: MaskedPlayer) => p.peerId === currentPeerId);
+          if (isPlayerInState) {
+            if (joinWatchdogTimerRef.current) {
+              clearTimeout(joinWatchdogTimerRef.current);
+              joinWatchdogTimerRef.current = null;
+            }
+            if (joinIntervalRef.current) {
+              clearInterval(joinIntervalRef.current);
+              joinIntervalRef.current = null;
+            }
+
+            const myHand = payload.hands?.[currentPeerId] || [];
+            const isSuggester =
+              payload.disprovedForSuggester &&
+              payload.disprovedForSuggester.suggesterPeerId === currentPeerId;
+
+            const personalState: MaskedGameState = {
+              ...payload.state,
+              players: payload.state.players.map((p: MaskedPlayer) =>
+                p.peerId === currentPeerId ? { ...p, hand: myHand } : p
+              ),
+            };
+
+            applyStateUpdate(
+              personalState,
+              isSuggester ? payload.disprovedForSuggester : null,
+              payload.accusationResult
+            );
+            return;
+          } else if (!maskedState) {
+            applyStateUpdate(payload.state, null, payload.accusationResult);
+            return;
+          }
+        }
+
         if (payload.type === 'PLAYER_STATE' && payload.targetPeerId === currentPeerId) {
           if (joinWatchdogTimerRef.current) {
             clearTimeout(joinWatchdogTimerRef.current);
@@ -202,8 +239,8 @@ export function useCluedoGame() {
         );
         hostControllerRef.current = controller;
 
-        // Connect client transport for multi-player messaging
-        clientTransport.connect(code, peerId, handleIncomingPacket);
+        // Connect client transport for multi-player messaging (as Host)
+        clientTransport.connect(code, peerId, handleIncomingPacket, true);
 
         // Update URL query parameter
         if (typeof window !== 'undefined') {
@@ -244,8 +281,8 @@ export function useCluedoGame() {
         roomCodeRef.current = cleanCode;
         isHostRef.current = false;
 
-        // Connect transport to room
-        clientTransport.connect(cleanCode, peerId, handleIncomingPacket);
+        // Connect transport to room as Guest
+        clientTransport.connect(cleanCode, peerId, handleIncomingPacket, false);
 
         // Send initial join request
         const sendJoin = () => {
@@ -260,12 +297,12 @@ export function useCluedoGame() {
         // Send immediately
         sendJoin();
 
-        // Re-send join request every 2 seconds in case host was connecting
+        // Re-send join request every 1.5 seconds in case host was connecting
         joinIntervalRef.current = setInterval(() => {
           sendJoin();
-        }, 2000);
+        }, 1500);
 
-        // 10-second watchdog timer
+        // 15-second watchdog timer (ensuring P2P WebRTC / Relay handshake completes)
         joinWatchdogTimerRef.current = setTimeout(() => {
           if (joinIntervalRef.current) {
             clearInterval(joinIntervalRef.current);
@@ -275,7 +312,7 @@ export function useCluedoGame() {
           setErrorMessage(
             `Unable to connect to Tudor Manor room ${cleanCode}. Please verify the room code and ensure the Host has the game open.`
           );
-        }, 10000);
+        }, 15000);
       } catch (err: any) {
         console.error('[Game] Error joining room:', err);
         setErrorMessage(err.message || 'Failed to connect to room');
