@@ -10,15 +10,9 @@ import {
   Suspect,
   Weapon,
 } from '../types/cluedo';
-import {
-  apiCreateRoom,
-  apiGetRoomState,
-  apiJoinRoom,
-  apiLeaveRoom,
-  apiSendAction,
-  formatRoomCode,
-  getWsUrl,
-} from './peerProtocol';
+import { formatRoomCode, generateRoomCode } from './peerProtocol';
+import { clientTransport, TransportPacket } from './clientTransport';
+import { HostController } from '../engine/hostController';
 import { sounds } from '../utils/audio';
 
 export function useCluedoGame() {
@@ -31,28 +25,32 @@ export function useCluedoGame() {
   const [disprovedCardReveal, setDisprovedCardReveal] = useState<DisprovedCardPayload | null>(null);
   const [accusationReveal, setAccusationReveal] = useState<AccusationResultPayload | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hostControllerRef = useRef<HostController | null>(null);
+  const myPeerIdRef = useRef<string>('');
   const roomCodeRef = useRef<string>('');
-  const peerIdRef = useRef<string>('');
+  const isHostRef = useRef<boolean>(false);
+  const joinWatchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const joinIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  myPeerIdRef.current = myPeerId;
   roomCodeRef.current = roomCode;
-  peerIdRef.current = myPeerId;
+  isHostRef.current = isHost;
 
   // Cleanup helper
   const teardownNetwork = useCallback(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
+    if (joinWatchdogTimerRef.current) {
+      clearTimeout(joinWatchdogTimerRef.current);
+      joinWatchdogTimerRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.onopen = null;
-      wsRef.current.onclose = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.close();
-      wsRef.current = null;
+    if (joinIntervalRef.current) {
+      clearInterval(joinIntervalRef.current);
+      joinIntervalRef.current = null;
     }
+    if (hostControllerRef.current) {
+      hostControllerRef.current.destroy();
+      hostControllerRef.current = null;
+    }
+    clientTransport.disconnect();
   }, []);
 
   // Update game state and handle sounds / transitions
@@ -86,163 +84,220 @@ export function useCluedoGame() {
     []
   );
 
-  // Initialize WebSocket and HTTP polling loop for the active room
-  const startRealtimeSync = useCallback(
-    (code: string, peerId: string) => {
-      teardownNetwork();
+  // Handle incoming packets from other players / host
+  const handleIncomingPacket = useCallback(
+    (packet: TransportPacket) => {
+      const payload = packet.payload;
+      if (!payload || typeof payload !== 'object') return;
 
-      // 1. Establish WebSocket Connection
-      const wsUrl = getWsUrl();
-      if (wsUrl) {
-        try {
-          const ws = new WebSocket(wsUrl);
-          wsRef.current = ws;
+      const currentPeerId = myPeerIdRef.current;
+      const isCurrentHost = isHostRef.current;
 
-          ws.onopen = () => {
-            console.log('[Game WS] Connected to relay server for room', code);
-            ws.send(
-              JSON.stringify({
-                type: 'JOIN_CHANNEL',
-                roomCode: code,
-                peerId,
-              })
-            );
-          };
+      // 1. HOST: Process requests from guests
+      if (isCurrentHost && hostControllerRef.current) {
+        if (payload.type === 'JOIN_REQUEST') {
+          hostControllerRef.current.handleJoinRequest(
+            payload.peerId,
+            payload.name,
+            payload.character
+          );
+          return;
+        }
 
-          ws.onmessage = (event) => {
-            try {
-              const msg = JSON.parse(event.data);
-              if (msg.type === 'STATE_UPDATE' && msg.state) {
-                applyStateUpdate(msg.state, msg.disprovedCard, msg.accusationResult);
-              }
-            } catch (err) {
-              console.warn('[Game WS] Message parse error:', err);
-            }
-          };
-
-          ws.onerror = (err) => {
-            console.warn('[Game WS] Connection notice, HTTP polling active:', err);
-          };
-
-          ws.onclose = () => {
-            console.log('[Game WS] Closed, HTTP polling continuing in background');
-          };
-        } catch (err) {
-          console.warn('[Game WS] Init error:', err);
+        if (payload.type === 'PLAYER_ACTION') {
+          hostControllerRef.current.handlePlayerAction(payload.peerId, payload.action);
+          return;
         }
       }
 
-      // 2. HTTP Polling Backup (every 1200ms)
-      pollIntervalRef.current = setInterval(async () => {
-        if (!roomCodeRef.current || !peerIdRef.current) return;
-        const res = await apiGetRoomState(roomCodeRef.current, peerIdRef.current);
-        if (res.success && res.state) {
-          applyStateUpdate(res.state, res.disprovedCard, res.accusationResult);
+      // 2. GUEST: Process updates from Host
+      if (!isCurrentHost) {
+        if (payload.type === 'JOIN_ACCEPTED' && payload.targetPeerId === currentPeerId) {
+          if (joinWatchdogTimerRef.current) {
+            clearTimeout(joinWatchdogTimerRef.current);
+            joinWatchdogTimerRef.current = null;
+          }
+          if (joinIntervalRef.current) {
+            clearInterval(joinIntervalRef.current);
+            joinIntervalRef.current = null;
+          }
+          return;
         }
-      }, 1200);
+
+        if (payload.type === 'JOIN_REJECTED' && payload.targetPeerId === currentPeerId) {
+          if (joinWatchdogTimerRef.current) {
+            clearTimeout(joinWatchdogTimerRef.current);
+            joinWatchdogTimerRef.current = null;
+          }
+          if (joinIntervalRef.current) {
+            clearInterval(joinIntervalRef.current);
+            joinIntervalRef.current = null;
+          }
+          setStatus('ERROR');
+          setErrorMessage(payload.reason || 'Unable to join the investigation room.');
+          return;
+        }
+
+        if (payload.type === 'PLAYER_STATE' && payload.targetPeerId === currentPeerId) {
+          if (joinWatchdogTimerRef.current) {
+            clearTimeout(joinWatchdogTimerRef.current);
+            joinWatchdogTimerRef.current = null;
+          }
+          if (joinIntervalRef.current) {
+            clearInterval(joinIntervalRef.current);
+            joinIntervalRef.current = null;
+          }
+          applyStateUpdate(payload.state, payload.disprovedCard, payload.accusationResult);
+          return;
+        }
+
+        if (payload.type === 'STATE_UPDATE' && payload.state) {
+          // If guest sees themselves in the players list, cancel watchdog and switch to game
+          const isPlayerInState = payload.state.players.some((p: MaskedPlayer) => p.peerId === currentPeerId);
+          if (isPlayerInState) {
+            if (joinWatchdogTimerRef.current) {
+              clearTimeout(joinWatchdogTimerRef.current);
+              joinWatchdogTimerRef.current = null;
+            }
+            if (joinIntervalRef.current) {
+              clearInterval(joinIntervalRef.current);
+              joinIntervalRef.current = null;
+            }
+            applyStateUpdate(payload.state, null, payload.accusationResult);
+          } else if (!maskedState) {
+            // General broadcast
+            applyStateUpdate(payload.state, null, payload.accusationResult);
+          }
+        }
+      }
     },
-    [teardownNetwork, applyStateUpdate]
+    [applyStateUpdate, maskedState]
   );
 
   // 1. Create Room (Host)
   const createRoom = useCallback(
-    async (character: Suspect, playerName: string) => {
+    (character: Suspect, playerName: string) => {
+      teardownNetwork();
       setStatus('CONNECTING');
       setErrorMessage('');
 
       try {
-        const res = await apiCreateRoom(character, playerName);
-        if (!res.success || !res.roomCode || !res.peerId || !res.state) {
-          setErrorMessage(res.error || 'Failed to create room on server');
-          setStatus('ERROR');
-          return;
+        const code = generateRoomCode();
+        const peerId = `host_${code}_${Date.now()}`;
+
+        setRoomCode(code);
+        setMyPeerId(peerId);
+        setIsHost(true);
+        myPeerIdRef.current = peerId;
+        roomCodeRef.current = code;
+        isHostRef.current = true;
+
+        // Initialize Host Controller
+        const controller = new HostController(
+          code,
+          peerId,
+          playerName || 'Detective Holmes',
+          character,
+          applyStateUpdate
+        );
+        hostControllerRef.current = controller;
+
+        // Connect client transport for multi-player messaging
+        clientTransport.connect(code, peerId, handleIncomingPacket);
+
+        // Update URL query parameter
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', code);
+          window.history.replaceState({}, '', url.toString());
         }
 
-        setRoomCode(res.roomCode);
-        setMyPeerId(res.peerId);
-        setIsHost(true);
-        applyStateUpdate(res.state);
-
-        startRealtimeSync(res.roomCode, res.peerId);
+        setStatus('LOBBY');
       } catch (err: any) {
-        setErrorMessage(err.message || 'Error communicating with game server');
+        console.error('[Game] Error hosting room:', err);
+        setErrorMessage(err.message || 'Failed to initialize investigation room');
         setStatus('ERROR');
       }
     },
-    [applyStateUpdate, startRealtimeSync]
+    [applyStateUpdate, handleIncomingPacket, teardownNetwork]
   );
 
   // 2. Join Room (Guest)
   const joinRoom = useCallback(
-    async (inputCode: string, character: Suspect, playerName: string) => {
+    (inputCode: string, character: Suspect, playerName: string) => {
       const cleanCode = formatRoomCode(inputCode);
       if (!cleanCode || cleanCode.length < 4) {
         setErrorMessage('Please provide a valid 6-character room code.');
         return;
       }
 
+      teardownNetwork();
       setStatus('CONNECTING');
       setErrorMessage('');
 
       try {
-        const res = await apiJoinRoom(cleanCode, playerName, character);
-        if (!res.success || !res.roomCode || !res.peerId || !res.state) {
-          setErrorMessage(res.error || `Unable to join room ${cleanCode}`);
+        const peerId = `guest_${cleanCode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        setRoomCode(cleanCode);
+        setMyPeerId(peerId);
+        setIsHost(false);
+        myPeerIdRef.current = peerId;
+        roomCodeRef.current = cleanCode;
+        isHostRef.current = false;
+
+        // Connect transport to room
+        clientTransport.connect(cleanCode, peerId, handleIncomingPacket);
+
+        // Send initial join request
+        const sendJoin = () => {
+          clientTransport.send({
+            type: 'JOIN_REQUEST',
+            peerId,
+            name: playerName || character,
+            character,
+          });
+        };
+
+        // Send immediately
+        sendJoin();
+
+        // Re-send join request every 2 seconds in case host was connecting
+        joinIntervalRef.current = setInterval(() => {
+          sendJoin();
+        }, 2000);
+
+        // 10-second watchdog timer
+        joinWatchdogTimerRef.current = setTimeout(() => {
+          if (joinIntervalRef.current) {
+            clearInterval(joinIntervalRef.current);
+            joinIntervalRef.current = null;
+          }
           setStatus('ERROR');
-          return;
-        }
-
-        setRoomCode(res.roomCode);
-        setMyPeerId(res.peerId);
-        setIsHost(res.isHost || false);
-        applyStateUpdate(res.state);
-
-        startRealtimeSync(res.roomCode, res.peerId);
+          setErrorMessage(
+            `Unable to connect to Tudor Manor room ${cleanCode}. Please verify the room code and ensure the Host has the game open.`
+          );
+        }, 10000);
       } catch (err: any) {
-        setErrorMessage(err.message || 'Error joining investigation room');
+        console.error('[Game] Error joining room:', err);
+        setErrorMessage(err.message || 'Failed to connect to room');
         setStatus('ERROR');
       }
     },
-    [applyStateUpdate, startRealtimeSync]
+    [handleIncomingPacket, teardownNetwork]
   );
 
-  // Action Dispatcher (WebSocket + HTTP Fallback)
-  const sendAction = useCallback(
-    async (packet: NetworkPacket) => {
-      const code = roomCodeRef.current;
-      const peerId = peerIdRef.current;
-      if (!code || !peerId) return;
-
-      // 1. Send via WebSocket if open (sub-millisecond instant delivery)
-      let sentViaWs = false;
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(
-            JSON.stringify({
-              type: 'ACTION',
-              roomCode: code,
-              peerId,
-              action: packet,
-            })
-          );
-          sentViaWs = true;
-        } catch (err) {
-          console.warn('[Game Action] WS send error:', err);
-        }
-      }
-
-      // 2. If WS is not connected or as fail-safe, dispatch via HTTP REST
-      if (!sentViaWs) {
-        const res = await apiSendAction(code, peerId, packet);
-        if (res.success && res.state) {
-          applyStateUpdate(res.state, res.disprovedCard, res.accusationResult);
-        } else if (res.error) {
-          console.warn('[Game Action] HTTP error:', res.error);
-        }
-      }
-    },
-    [applyStateUpdate]
-  );
+  // Send action either to local HostController (if Host) or via transport to Host (if Guest)
+  const sendAction = useCallback((action: NetworkPacket) => {
+    const peerId = myPeerIdRef.current;
+    if (isHostRef.current && hostControllerRef.current) {
+      hostControllerRef.current.handlePlayerAction(peerId, action);
+    } else {
+      clientTransport.send({
+        type: 'PLAYER_ACTION',
+        peerId,
+        action,
+      });
+    }
+  }, []);
 
   // Gameplay Actions
   const selectCharacter = useCallback(
@@ -326,9 +381,6 @@ export function useCluedoGame() {
   );
 
   const leaveGame = useCallback(() => {
-    if (roomCodeRef.current && peerIdRef.current) {
-      apiLeaveRoom(roomCodeRef.current, peerIdRef.current).catch(() => {});
-    }
     teardownNetwork();
     setMaskedState(null);
     setStatus('IDLE');
@@ -338,6 +390,15 @@ export function useCluedoGame() {
     setErrorMessage('');
     setDisprovedCardReveal(null);
     setAccusationReveal(null);
+
+    // Clear URL param
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('room');
+      url.searchParams.delete('join');
+      url.searchParams.delete('code');
+      window.history.replaceState({}, '', url.toString());
+    }
   }, [teardownNetwork]);
 
   const closeDisprovedCardReveal = useCallback(() => {
