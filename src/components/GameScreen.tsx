@@ -8,6 +8,7 @@ import {
   Room,
   Suspect,
   Weapon,
+  SUSPECT_COLORS,
 } from '../types/cluedo';
 import { MansionBoard } from './board/MansionBoard';
 import { CommandPanel } from './ui/CommandPanel';
@@ -173,10 +174,66 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       {/* Main Play Area */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden p-2 sm:p-3 gap-3">
-        {/* Left / Center: Board Viewport + Bottom Hand Tray */}
-        <section className="flex-1 flex flex-col justify-between items-center overflow-y-auto space-y-2">
+        {/* Widescreen Left Sidebar: Detective Dossier & Confidential Hand (Visible on xl+ screens) */}
+        {myPlayer && (
+          <aside className="hidden xl:flex w-64 2xl:w-72 flex-shrink-0 flex-col gap-3 h-full overflow-hidden animate-fade-in">
+            {/* Detective Profile Card */}
+            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37]/40 shadow-xl flex flex-col space-y-2 select-none">
+              <div className="flex items-center space-x-3">
+                <div
+                  className="w-11 h-11 rounded-full border-2 border-[#d4af37] flex items-center justify-center text-white font-deco font-black text-base shadow-[0_0_12px_rgba(212,175,55,0.4)]"
+                  style={{ backgroundColor: SUSPECT_COLORS[myPlayer.character]?.hex || '#9b111e' }}
+                >
+                  {myPlayer.character.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="font-deco font-bold text-sm text-[#f4e4bc] truncate uppercase tracking-wider">
+                      {myPlayer.name}
+                    </span>
+                    {myPlayer.isHost && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40">
+                        HOST
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#baa479] font-serif-vintage italic truncate">
+                    Persona: {myPlayer.character}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[#d4af37]/20 flex items-center justify-between text-[11px] font-serif-vintage">
+                <span className="text-[#baa479]">Location:</span>
+                <span className="font-bold text-[#f4e4bc]">
+                  {myPlayer.position.room
+                    ? `In ${myPlayer.position.room}`
+                    : `Corridor (${myPlayer.position.x}, ${myPlayer.position.y})`}
+                </span>
+              </div>
+
+              {myPlayer.hasAccusedWrongly && (
+                <div className="p-1.5 rounded bg-red-950/80 border border-red-700/60 text-red-300 text-[10px] font-mono flex items-center space-x-1">
+                  <ShieldAlert className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                  <span>Witness Mode (Eliminated)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Vertical Confidential Hand Tray */}
+            <HandTray
+              hand={myHand}
+              onOpenNotebook={() => setIsNotebookOpen(true)}
+              orientation="vertical"
+              className="flex-1 min-h-0"
+            />
+          </aside>
+        )}
+
+        {/* Center: Board Viewport + Bottom Hand Tray (for < xl screens) */}
+        <section className="flex-1 flex flex-col justify-between items-center overflow-hidden min-w-0 h-full space-y-2">
           {/* 1:1 Mansion Board */}
-          <div className="flex-1 flex items-center justify-center w-full min-h-0">
+          <div className="flex-1 flex items-center justify-center w-full h-full min-h-0 min-w-0 overflow-hidden">
             <MansionBoard
               gameState={gameState}
               myPlayer={myPlayer}
@@ -270,17 +327,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </div>
           )}
 
-          {/* Bottom Docked Hand Tray */}
-          <div className="w-full flex-shrink-0">
+          {/* Bottom Docked Hand Tray (Only on screens below xl) */}
+          <div className="w-full flex-shrink-0 xl:hidden">
             <HandTray
               hand={myHand}
               onOpenNotebook={() => setIsNotebookOpen(true)}
+              orientation="horizontal"
             />
           </div>
         </section>
 
         {/* Right Docking Command & Transcript Panel */}
-        <aside className="w-full lg:w-[420px] h-[340px] lg:h-full flex-shrink-0">
+        <aside className="w-full lg:w-[380px] xl:w-[400px] 2xl:w-[440px] h-[340px] lg:h-full flex-shrink-0">
           <CommandPanel
             gameState={gameState}
             myPlayer={myPlayer}

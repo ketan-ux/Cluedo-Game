@@ -4,6 +4,7 @@ import {
   MaskedGameState,
   MaskedPlayer,
   SUSPECT_COLORS,
+  SUSPECT_STARTING_POSITIONS,
   Suspect,
 } from '../types/cluedo';
 import { CHARACTER_DETAILS } from '../engine/assets';
@@ -80,7 +81,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     return (
       <div
         id="lobby-active-screen"
-        className="relative w-full max-w-5xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-8 shadow-2xl flex flex-col space-y-6 animate-fade-in"
+        className="relative w-full max-w-5xl xl:max-w-6xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-8 lg:p-10 shadow-2xl flex flex-col space-y-6 animate-fade-in"
       >
         {/* Header with Room Code & Invite Link */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-[#d4af37]/30 pb-6">
@@ -273,156 +274,186 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   return (
     <div
       id="lobby-setup-screen"
-      className="relative w-full max-w-2xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-10 shadow-2xl flex flex-col space-y-6 animate-fade-in"
+      className="relative w-full max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-8 lg:p-10 shadow-2xl flex flex-col space-y-6 animate-fade-in"
     >
       {/* Title & Introduction */}
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-2 border-b border-[#d4af37]/30 pb-5">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-[#1a0f0d] border border-[#d4af37]/50 text-xs font-deco tracking-widest uppercase text-[#d4af37] mb-1">
           <Sparkles className="w-3.5 h-3.5" />
           <span>Worldwide Multiplayer • Real-Time Cross-Network Sync</span>
         </div>
-        <h1 className="font-deco font-black text-3xl sm:text-4xl text-[#f4e4bc] tracking-wider uppercase">
+        <h1 className="font-deco font-black text-3xl sm:text-4xl lg:text-5xl text-[#f4e4bc] tracking-wider uppercase">
           CLUEDO: BODDY MANOR
         </h1>
-        <p className="text-xs sm:text-sm font-serif-vintage italic text-[#e6c88b] max-w-md mx-auto">
+        <p className="text-xs sm:text-sm font-serif-vintage italic text-[#e6c88b] max-w-xl mx-auto">
           Six prominent guests. Nine lavish rooms. Six deadly weapons. One murder. Unravel the crime before your fellow detectives.
         </p>
       </div>
 
-      {/* Host / Join Tabs */}
-      <div className="flex rounded-xl bg-[#1a0f0d] p-1 border border-[#d4af37]/30">
-        <button
-          type="button"
-          onClick={() => setTab('HOST')}
-          className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-            tab === 'HOST'
-              ? 'bg-[#d4af37] text-[#1a0f0d] shadow'
-              : 'text-[#baa479] hover:text-[#f4e4bc]'
-          }`}
-        >
-          Host New Investigation
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('JOIN')}
-          className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-            tab === 'JOIN'
-              ? 'bg-[#d4af37] text-[#1a0f0d] shadow'
-              : 'text-[#baa479] hover:text-[#f4e4bc]'
-          }`}
-        >
-          Join Existing Room
-        </button>
-      </div>
+      {/* Desktop 2-Panel Layout: Personas on Left, Room Controls on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Left: Persona Selection (7 cols on lg) */}
+        <div className="lg:col-span-7 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
+              Choose Your Detective Persona
+            </label>
+            <span className="text-[11px] font-serif-vintage italic text-[#baa479]">
+              Selected: <strong className="text-[#f4e4bc] not-italic">{selectedCharacter}</strong>
+            </span>
+          </div>
 
-      {/* Name Input */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-          Detective Pseudonym / Name
-        </label>
-        <input
-          id="player-name-input"
-          type="text"
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value)}
-          placeholder="e.g. Detective Holmes"
-          maxLength={20}
-          className="w-full px-4 py-2.5 bg-[#1a0f0d] border border-[#d4af37]/40 rounded-xl text-sm text-[#f4e4bc] focus:outline-none focus:border-[#d4af37]"
-        />
-      </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {ALL_SUSPECTS.map((suspect) => {
+              const isSelected = selectedCharacter === suspect;
+              const color = SUSPECT_COLORS[suspect];
+              const detail = CHARACTER_DETAILS[suspect];
 
-      {/* Join Code Input (if joining) */}
-      {tab === 'JOIN' && (
-        <div className="space-y-1.5">
-          {joinCodeInput && (
-            <div className="p-2.5 rounded-xl bg-[#251610] border border-[#d4af37]/50 flex items-center justify-between text-xs font-mono text-[#f4e4bc] animate-fade-in">
-              <span className="flex items-center space-x-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Invited to Room: <strong className="text-[#d4af37] font-bold">{joinCodeInput}</strong></span>
-              </span>
-              <span className="text-[10px] text-[#baa479] font-serif-vintage italic">Direct Invite Loaded</span>
+              return (
+                <button
+                  key={suspect}
+                  type="button"
+                  onClick={() => setSelectedCharacter(suspect)}
+                  className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#251610] border-[#d4af37] ring-2 ring-[#d4af37]/70 shadow-[0_0_16px_rgba(212,175,55,0.3)] scale-[1.02]'
+                      : 'bg-[#1a0f0d] border-[#d4af37]/20 hover:border-[#d4af37]/60 hover:bg-[#20130f]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 mb-1.5">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-deco font-bold text-xs shadow-md flex-shrink-0"
+                      style={{ backgroundColor: color.hex }}
+                    >
+                      {suspect.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-deco font-bold text-xs text-[#f4e4bc] block truncate">
+                        {suspect}
+                      </span>
+                      <span className="text-[9px] font-mono text-[#d4af37] block truncate">
+                        Start: {SUSPECT_STARTING_POSITIONS[suspect].x},{SUSPECT_STARTING_POSITIONS[suspect].y}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] font-serif-vintage italic text-[#baa479] line-clamp-2 leading-relaxed">
+                    {detail.title}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right: Hosting & Joining Control Panel (5 cols on lg) */}
+        <div className="lg:col-span-5 flex flex-col space-y-4 bg-[#1a0f0d] p-5 sm:p-6 rounded-2xl border border-[#d4af37]/40 shadow-xl">
+          {/* Host / Join Tabs */}
+          <div className="flex rounded-xl bg-[#0d0705] p-1 border border-[#d4af37]/30">
+            <button
+              type="button"
+              onClick={() => setTab('HOST')}
+              className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                tab === 'HOST'
+                  ? 'bg-[#d4af37] text-[#1a0f0d] shadow-md'
+                  : 'text-[#baa479] hover:text-[#f4e4bc]'
+              }`}
+            >
+              Host Match
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('JOIN')}
+              className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                tab === 'JOIN'
+                  ? 'bg-[#d4af37] text-[#1a0f0d] shadow-md'
+                  : 'text-[#baa479] hover:text-[#f4e4bc]'
+              }`}
+            >
+              Join Room
+            </button>
+          </div>
+
+          {/* Name Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
+              Detective Pseudonym / Name
+            </label>
+            <input
+              id="player-name-input"
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="e.g. Detective Holmes"
+              maxLength={20}
+              className="w-full px-4 py-2.5 bg-[#251610] border border-[#d4af37]/40 rounded-xl text-sm text-[#f4e4bc] focus:outline-none focus:border-[#d4af37]"
+            />
+          </div>
+
+          {/* Join Code Input (if joining) */}
+          {tab === 'JOIN' && (
+            <div className="space-y-1.5">
+              {joinCodeInput && (
+                <div className="p-2.5 rounded-xl bg-[#251610] border border-[#d4af37]/50 flex items-center justify-between text-xs font-mono text-[#f4e4bc] animate-fade-in">
+                  <span className="flex items-center space-x-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Invited to: <strong className="text-[#d4af37] font-bold">{joinCodeInput}</strong></span>
+                  </span>
+                  <span className="text-[10px] text-[#baa479] font-serif-vintage italic">Link Loaded</span>
+                </div>
+              )}
+              <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
+                6-Character Room Code
+              </label>
+              <input
+                id="join-code-input"
+                type="text"
+                value={joinCodeInput}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase().slice(0, 6))}
+                placeholder="e.g. 9X2YAB"
+                maxLength={6}
+                className="w-full px-4 py-2.5 bg-[#251610] border border-[#d4af37]/40 rounded-xl font-mono text-lg font-bold text-[#d4af37] tracking-widest focus:outline-none focus:border-[#d4af37]"
+              />
             </div>
           )}
-          <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-            6-Character Room Code
-          </label>
-          <input
-            id="join-code-input"
-            type="text"
-            value={joinCodeInput}
-            onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase().slice(0, 6))}
-            placeholder="e.g. 9X2YAB"
-            maxLength={6}
-            className="w-full px-4 py-2.5 bg-[#1a0f0d] border border-[#d4af37]/40 rounded-xl font-mono text-lg font-bold text-[#d4af37] tracking-widest focus:outline-none focus:border-[#d4af37]"
-          />
-        </div>
-      )}
 
-      {/* Character Selection */}
-      <div className="space-y-2">
-        <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-          Choose Your Persona
-        </label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          {ALL_SUSPECTS.map((suspect) => {
-            const isSelected = selectedCharacter === suspect;
-            const color = SUSPECT_COLORS[suspect];
-            const detail = CHARACTER_DETAILS[suspect];
+          {/* Case Info Box */}
+          <div className="p-3 rounded-xl bg-[#251610]/60 border border-[#d4af37]/20 text-[11px] font-serif-vintage text-[#baa479] space-y-1">
+            <div className="flex items-center justify-between text-xs font-deco text-[#d4af37] uppercase">
+              <span>Investigation File</span>
+              <span>1926 Case #42</span>
+            </div>
+            <p className="italic">
+              Multiplayer synchronization works across tabs, devices, and networks without requiring a custom server backend.
+            </p>
+          </div>
 
-            return (
+          {/* Submit Button */}
+          <div className="pt-2">
+            {tab === 'HOST' ? (
               <button
-                key={suspect}
+                id="create-room-btn"
                 type="button"
-                onClick={() => setSelectedCharacter(suspect)}
-                className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-[#251610] border-[#d4af37] ring-2 ring-[#d4af37]/60 shadow-[0_0_12px_rgba(212,175,55,0.3)]'
-                    : 'bg-[#1a0f0d] border-[#d4af37]/20 hover:border-[#d4af37]/50'
-                }`}
+                disabled={!playerName.trim()}
+                onClick={() => onCreateRoom(selectedCharacter, playerName.trim())}
+                className="w-full py-3.5 rounded-xl font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/30 flex items-center justify-center space-x-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <div className="flex items-center space-x-2 mb-1">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px] shadow"
-                    style={{ backgroundColor: color.hex }}
-                  >
-                    {suspect.charAt(0)}
-                  </div>
-                  <span className="font-bold text-xs text-[#f4e4bc] truncate">{suspect}</span>
-                </div>
-                <p className="text-[10px] font-serif-vintage italic text-[#baa479] line-clamp-1">
-                  {detail.title}
-                </p>
+                <span>Open Investigation Room</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
-            );
-          })}
+            ) : (
+              <button
+                id="join-room-btn"
+                type="button"
+                disabled={!playerName.trim() || joinCodeInput.length < 4}
+                onClick={() => onJoinRoom(joinCodeInput, selectedCharacter, playerName.trim())}
+                className="w-full py-3.5 rounded-xl font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/30 flex items-center justify-center space-x-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Connect to Match</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Submit Button */}
-      <div className="pt-2">
-        {tab === 'HOST' ? (
-          <button
-            id="create-room-btn"
-            type="button"
-            disabled={!playerName.trim()}
-            onClick={() => onCreateRoom(selectedCharacter, playerName.trim())}
-            className="w-full py-3.5 rounded font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
-          >
-            <span>Create Master Investigation Room</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        ) : (
-          <button
-            id="join-room-btn"
-            type="button"
-            disabled={!playerName.trim() || joinCodeInput.length < 4}
-            onClick={() => onJoinRoom(joinCodeInput, selectedCharacter, playerName.trim())}
-            className="w-full py-3.5 rounded font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
-          >
-            <span>Join Detective Match</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        )}
       </div>
     </div>
   );

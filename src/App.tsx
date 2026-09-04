@@ -29,8 +29,16 @@ export default function App() {
     }
   }, [status, actions]);
 
+  const isInGame = maskedState && maskedState.phase !== 'LOBBY';
+
   return (
-    <div className="min-h-screen w-full bg-[#0d0705] text-[#f4ecd8] flex flex-col items-center justify-center p-2 sm:p-4 overflow-hidden relative">
+    <div
+      className={
+        isInGame
+          ? 'w-full h-screen bg-[#0d0705] text-[#f4ecd8] overflow-hidden relative'
+          : 'min-h-screen w-full bg-[#0d0705] text-[#f4ecd8] flex flex-col items-center justify-center p-3 sm:p-6 lg:p-8 overflow-y-auto relative'
+      }
+    >
       {/* Error Toast Notification */}
       {errorMessage && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full p-4 rounded-xl bg-red-950/90 border-2 border-red-600 text-red-200 shadow-2xl flex items-center justify-between space-x-3 animate-fade-in">
@@ -75,7 +83,7 @@ export default function App() {
       )}
 
       {/* Main Game Screen */}
-      {maskedState && maskedState.phase !== 'LOBBY' ? (
+      {isInGame ? (
         <GameScreen
           gameState={maskedState}
           myPlayer={myPlayer}

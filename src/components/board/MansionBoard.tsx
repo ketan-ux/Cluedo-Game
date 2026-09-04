@@ -206,7 +206,7 @@ export const MansionBoard: React.FC<MansionBoardProps> = ({
   return (
     <div
       id="mansion-board-container"
-      className="relative w-full max-w-[760px] aspect-square rounded-xl p-3 bg-[#251610] border-4 border-[#2d1b10] shadow-[0_16px_48px_rgba(0,0,0,0.9)] overflow-hidden select-none"
+      className="relative aspect-square w-auto h-full max-h-[calc(100vh-130px)] max-w-[calc(100vh-130px)] rounded-xl p-2.5 sm:p-3 bg-[#251610] border-4 border-[#2d1b10] shadow-[0_16px_48px_rgba(0,0,0,0.9)] overflow-hidden select-none flex flex-col justify-center"
     >
       {/* Decorative Gold Inset Frame */}
       <div className="absolute inset-2 border-2 border-[#d4af37]/40 rounded-lg pointer-events-none z-10" />
