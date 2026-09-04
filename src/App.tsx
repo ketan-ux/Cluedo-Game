@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useCluedoGame } from './network/useCluedoGame';
 import { LobbyScreen } from './components/LobbyScreen';
 import { GameScreen } from './components/GameScreen';
-import { AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
+import { AlertCircle, RotateCcw, Loader2, ArrowLeft } from 'lucide-react';
 
 export default function App() {
   const {
@@ -18,6 +18,16 @@ export default function App() {
     accusationReveal,
     actions,
   } = useCluedoGame();
+
+  // Safeguard: If stuck in CONNECTING for more than 8 seconds, fail gracefully
+  useEffect(() => {
+    if (status === 'CONNECTING') {
+      const timer = setTimeout(() => {
+        actions.leaveGame();
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [status, actions]);
 
   return (
     <div className="min-h-screen w-full bg-[#0d0705] text-[#f4ecd8] flex flex-col items-center justify-center p-2 sm:p-4 overflow-hidden relative">
@@ -38,16 +48,29 @@ export default function App() {
         </div>
       )}
 
-      {/* Connecting Spinner */}
+      {/* Connecting Spinner with Cancel / Back option */}
       {status === 'CONNECTING' && (
-        <div className="flex flex-col items-center justify-center space-y-3 p-8 rounded-2xl mahogany-panel border border-[#d4af37]">
-          <Loader2 className="w-8 h-8 text-[#d4af37] animate-spin" />
-          <h3 className="font-deco font-bold text-lg text-[#fff4d1]">
-            Connecting to Investigation Room...
-          </h3>
-          <p className="text-xs font-mono text-[#baa479]">
-            Establishing Multi-Network Global Relay...
-          </p>
+        <div className="flex flex-col items-center justify-center space-y-4 p-8 sm:p-10 rounded-3xl mahogany-panel border-2 border-[#d4af37] shadow-2xl animate-fade-in max-w-md text-center">
+          <div className="relative">
+            <Loader2 className="w-10 h-10 text-[#d4af37] animate-spin" />
+            <span className="absolute inset-0 rounded-full border-2 border-[#d4af37]/20 animate-ping" />
+          </div>
+          <div>
+            <h3 className="font-deco font-bold text-lg text-[#fff4d1] tracking-wide">
+              Connecting to Investigation Room...
+            </h3>
+            <p className="text-xs font-mono text-[#baa479] mt-1">
+              Synchronizing with Authoritative Server Relay
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={actions.leaveGame}
+            className="mt-2 px-4 py-2 rounded-lg bg-[#251610] hover:bg-[#3d2013] text-[#d4af37] border border-[#d4af37]/40 text-xs font-deco uppercase tracking-wider flex items-center space-x-1.5 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Cancel & Return</span>
+          </button>
         </div>
       )}
 
@@ -90,4 +113,3 @@ export default function App() {
     </div>
   );
 }
-

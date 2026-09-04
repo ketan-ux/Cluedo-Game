@@ -10,9 +10,15 @@ import {
   Suspect,
   Weapon,
 } from '../types/cluedo';
-import { P2PHostServer } from './p2pServer';
-import { P2PGuestClient } from './p2pClient';
-import { formatRoomCode, generateRoomCode, getHostPeerId } from './peerProtocol';
+import {
+  apiCreateRoom,
+  apiGetRoomState,
+  apiJoinRoom,
+  apiLeaveRoom,
+  apiSendAction,
+  formatRoomCode,
+  getWsUrl,
+} from './peerProtocol';
 import { sounds } from '../utils/audio';
 
 export function useCluedoGame() {
@@ -25,214 +31,314 @@ export function useCluedoGame() {
   const [disprovedCardReveal, setDisprovedCardReveal] = useState<DisprovedCardPayload | null>(null);
   const [accusationReveal, setAccusationReveal] = useState<AccusationResultPayload | null>(null);
 
-  const hostServerRef = useRef<P2PHostServer | null>(null);
-  const guestClientRef = useRef<P2PGuestClient | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const roomCodeRef = useRef<string>('');
+  const peerIdRef = useRef<string>('');
 
-  // Sync state handler
-  const handleStateUpdate = useCallback((newState: MaskedGameState) => {
-    setMaskedState(newState);
-    if (newState.phase === 'LOBBY') {
-      setStatus('LOBBY');
-    } else {
-      setStatus('IN_GAME');
+  roomCodeRef.current = roomCode;
+  peerIdRef.current = myPeerId;
+
+  // Cleanup helper
+  const teardownNetwork = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onclose = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
+      wsRef.current.close();
+      wsRef.current = null;
     }
   }, []);
 
-  // Private disproved reveal handler
-  const handleDisprovedCardPrivate = useCallback((payload: DisprovedCardPayload) => {
-    setDisprovedCardReveal(payload);
-    sounds.playCardSlide();
-  }, []);
+  // Update game state and handle sounds / transitions
+  const applyStateUpdate = useCallback(
+    (
+      newState: MaskedGameState,
+      disproved?: DisprovedCardPayload | null,
+      accusation?: AccusationResultPayload | null
+    ) => {
+      setMaskedState(newState);
+      if (newState.phase === 'LOBBY') {
+        setStatus('LOBBY');
+      } else {
+        setStatus('IN_GAME');
+      }
 
-  // Private accusation outcome & envelope reveal handler
-  const handleAccusationResult = useCallback((payload: AccusationResultPayload) => {
-    setAccusationReveal(payload);
-    if (payload.isCorrect) {
-      sounds.playVictoryFanfare();
-    } else {
-      sounds.playGavelBang();
-    }
-  }, []);
+      if (disproved) {
+        setDisprovedCardReveal(disproved);
+        sounds.playCardSlide();
+      }
 
-  // 1. Create Room as Host
+      if (accusation) {
+        setAccusationReveal(accusation);
+        if (accusation.isCorrect) {
+          sounds.playVictoryFanfare();
+        } else {
+          sounds.playGavelBang();
+        }
+      }
+    },
+    []
+  );
+
+  // Initialize WebSocket and HTTP polling loop for the active room
+  const startRealtimeSync = useCallback(
+    (code: string, peerId: string) => {
+      teardownNetwork();
+
+      // 1. Establish WebSocket Connection
+      const wsUrl = getWsUrl();
+      if (wsUrl) {
+        try {
+          const ws = new WebSocket(wsUrl);
+          wsRef.current = ws;
+
+          ws.onopen = () => {
+            console.log('[Game WS] Connected to relay server for room', code);
+            ws.send(
+              JSON.stringify({
+                type: 'JOIN_CHANNEL',
+                roomCode: code,
+                peerId,
+              })
+            );
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'STATE_UPDATE' && msg.state) {
+                applyStateUpdate(msg.state, msg.disprovedCard, msg.accusationResult);
+              }
+            } catch (err) {
+              console.warn('[Game WS] Message parse error:', err);
+            }
+          };
+
+          ws.onerror = (err) => {
+            console.warn('[Game WS] Connection notice, HTTP polling active:', err);
+          };
+
+          ws.onclose = () => {
+            console.log('[Game WS] Closed, HTTP polling continuing in background');
+          };
+        } catch (err) {
+          console.warn('[Game WS] Init error:', err);
+        }
+      }
+
+      // 2. HTTP Polling Backup (every 1200ms)
+      pollIntervalRef.current = setInterval(async () => {
+        if (!roomCodeRef.current || !peerIdRef.current) return;
+        const res = await apiGetRoomState(roomCodeRef.current, peerIdRef.current);
+        if (res.success && res.state) {
+          applyStateUpdate(res.state, res.disprovedCard, res.accusationResult);
+        }
+      }, 1200);
+    },
+    [teardownNetwork, applyStateUpdate]
+  );
+
+  // 1. Create Room (Host)
   const createRoom = useCallback(
-    (character: Suspect, playerName: string) => {
-      const code = generateRoomCode();
-      setRoomCode(code);
-      setIsHost(true);
+    async (character: Suspect, playerName: string) => {
       setStatus('CONNECTING');
       setErrorMessage('');
 
       try {
-        if (hostServerRef.current) hostServerRef.current.destroy();
-        if (guestClientRef.current) guestClientRef.current.destroy();
+        const res = await apiCreateRoom(character, playerName);
+        if (!res.success || !res.roomCode || !res.peerId || !res.state) {
+          setErrorMessage(res.error || 'Failed to create room on server');
+          setStatus('ERROR');
+          return;
+        }
 
-        const server = new P2PHostServer(code, { character, name: playerName }, {
-          onStateUpdate: handleStateUpdate,
-          onDisprovedCardPrivate: handleDisprovedCardPrivate,
-          onAccusationResult: handleAccusationResult,
-          onError: (err) => {
-            setErrorMessage(err.message);
-            setStatus('ERROR');
-          },
-        });
+        setRoomCode(res.roomCode);
+        setMyPeerId(res.peerId);
+        setIsHost(true);
+        applyStateUpdate(res.state);
 
-        hostServerRef.current = server;
-        setMyPeerId(getHostPeerId(code));
+        startRealtimeSync(res.roomCode, res.peerId);
       } catch (err: any) {
-        setErrorMessage(err.message || 'Failed to create host room');
+        setErrorMessage(err.message || 'Error communicating with game server');
         setStatus('ERROR');
       }
     },
-    [handleStateUpdate, handleDisprovedCardPrivate, handleAccusationResult]
+    [applyStateUpdate, startRealtimeSync]
   );
 
-  // 2. Join Room as Guest
+  // 2. Join Room (Guest)
   const joinRoom = useCallback(
-    (inputCode: string, character: Suspect, playerName: string) => {
+    async (inputCode: string, character: Suspect, playerName: string) => {
       const cleanCode = formatRoomCode(inputCode);
-      if (!cleanCode) {
+      if (!cleanCode || cleanCode.length < 4) {
         setErrorMessage('Please provide a valid 6-character room code.');
         return;
       }
 
-      setRoomCode(cleanCode);
-      setIsHost(false);
       setStatus('CONNECTING');
       setErrorMessage('');
 
       try {
-        if (hostServerRef.current) hostServerRef.current.destroy();
-        if (guestClientRef.current) guestClientRef.current.destroy();
+        const res = await apiJoinRoom(cleanCode, playerName, character);
+        if (!res.success || !res.roomCode || !res.peerId || !res.state) {
+          setErrorMessage(res.error || `Unable to join room ${cleanCode}`);
+          setStatus('ERROR');
+          return;
+        }
 
-        const client = new P2PGuestClient(cleanCode, playerName, character, {
-          onStateUpdate: handleStateUpdate,
-          onDisprovedCardPrivate: handleDisprovedCardPrivate,
-          onAccusationResult: handleAccusationResult,
-          onConnected: () => {
-            setStatus('LOBBY');
-          },
-          onDisconnected: () => {
-            console.log('[Game] Direct channel notice, background sync active');
-          },
-          onError: (err) => {
-            console.warn('[Game] Network notice:', err);
-          },
-        });
+        setRoomCode(res.roomCode);
+        setMyPeerId(res.peerId);
+        setIsHost(res.isHost || false);
+        applyStateUpdate(res.state);
 
-        guestClientRef.current = client;
-        setMyPeerId(client.myPeerId);
+        startRealtimeSync(res.roomCode, res.peerId);
       } catch (err: any) {
-        setErrorMessage(err.message || 'Failed to join game');
+        setErrorMessage(err.message || 'Error joining investigation room');
         setStatus('ERROR');
       }
     },
-    [handleStateUpdate, handleDisprovedCardPrivate, handleAccusationResult]
+    [applyStateUpdate, startRealtimeSync]
   );
 
-  // Send packet routing
-  const sendPacket = useCallback(
-    (packet: NetworkPacket) => {
-      if (isHost && hostServerRef.current) {
-        hostServerRef.current.processPacket(myPeerId, packet);
-      } else if (guestClientRef.current) {
-        guestClientRef.current.sendPacket(packet);
+  // Action Dispatcher (WebSocket + HTTP Fallback)
+  const sendAction = useCallback(
+    async (packet: NetworkPacket) => {
+      const code = roomCodeRef.current;
+      const peerId = peerIdRef.current;
+      if (!code || !peerId) return;
+
+      // 1. Send via WebSocket if open (sub-millisecond instant delivery)
+      let sentViaWs = false;
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'ACTION',
+              roomCode: code,
+              peerId,
+              action: packet,
+            })
+          );
+          sentViaWs = true;
+        } catch (err) {
+          console.warn('[Game Action] WS send error:', err);
+        }
+      }
+
+      // 2. If WS is not connected or as fail-safe, dispatch via HTTP REST
+      if (!sentViaWs) {
+        const res = await apiSendAction(code, peerId, packet);
+        if (res.success && res.state) {
+          applyStateUpdate(res.state, res.disprovedCard, res.accusationResult);
+        } else if (res.error) {
+          console.warn('[Game Action] HTTP error:', res.error);
+        }
       }
     },
-    [isHost, myPeerId]
+    [applyStateUpdate]
   );
 
-  // Action methods
+  // Gameplay Actions
   const selectCharacter = useCallback(
     (char: Suspect) => {
-      sendPacket({ type: 'SELECT_CHARACTER', payload: { character: char } });
+      sendAction({ type: 'SELECT_CHARACTER', payload: { character: char } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const addAiBot = useCallback(
     (char: Suspect) => {
-      sendPacket({ type: 'ADD_BOT', payload: { character: char } });
+      sendAction({ type: 'ADD_BOT', payload: { character: char } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const removePlayer = useCallback(
     (peerIdToRemove: string) => {
-      sendPacket({ type: 'REMOVE_PLAYER', payload: { peerId: peerIdToRemove } });
+      sendAction({ type: 'REMOVE_PLAYER', payload: { peerId: peerIdToRemove } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const startMatch = useCallback(() => {
-    sendPacket({ type: 'START_MATCH' });
-  }, [sendPacket]);
+    sendAction({ type: 'START_MATCH' });
+  }, [sendAction]);
 
   const rollDice = useCallback(() => {
     sounds.playDiceRoll();
-    sendPacket({ type: 'ROLL_DICE' });
-  }, [sendPacket]);
+    sendAction({ type: 'ROLL_DICE' });
+  }, [sendAction]);
 
   const moveToken = useCallback(
     (x: number, y: number) => {
       sounds.playPawnStep();
-      sendPacket({ type: 'MOVE_TOKEN', payload: { x, y } });
+      sendAction({ type: 'MOVE_TOKEN', payload: { x, y } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const useSecretPassage = useCallback(
     (targetRoom: Room) => {
       sounds.playDoorCreak();
-      sendPacket({ type: 'USE_SECRET_PASSAGE', payload: { targetRoom } });
+      sendAction({ type: 'USE_SECRET_PASSAGE', payload: { targetRoom } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const makeSuggestion = useCallback(
     (suspect: Suspect, weapon: Weapon) => {
-      sendPacket({ type: 'MAKE_SUGGESTION', payload: { suspect, weapon } });
+      sendAction({ type: 'MAKE_SUGGESTION', payload: { suspect, weapon } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
-  const disproveCard = useCallback(
+  const disproveCardAction = useCallback(
     (cardId: string) => {
       sounds.playCardSlide();
-      sendPacket({ type: 'DISPROVE_CARD', payload: { cardId } });
+      sendAction({ type: 'DISPROVE_CARD', payload: { cardId } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
-  const makeAccusation = useCallback(
+  const makeAccusationAction = useCallback(
     (suspect: Suspect, weapon: Weapon, room: Room) => {
       sounds.playGavelBang();
-      sendPacket({ type: 'MAKE_ACCUSATION', payload: { suspect, weapon, room } });
+      sendAction({ type: 'MAKE_ACCUSATION', payload: { suspect, weapon, room } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const endTurn = useCallback(() => {
-    sendPacket({ type: 'END_TURN' });
-  }, [sendPacket]);
+    sendAction({ type: 'END_TURN' });
+  }, [sendAction]);
 
   const sendChatMessage = useCallback(
     (text: string) => {
-      sendPacket({ type: 'CHAT_MESSAGE', payload: { text } });
+      sendAction({ type: 'CHAT_MESSAGE', payload: { text } });
     },
-    [sendPacket]
+    [sendAction]
   );
 
   const leaveGame = useCallback(() => {
-    if (hostServerRef.current) hostServerRef.current.destroy();
-    if (guestClientRef.current) guestClientRef.current.destroy();
+    if (roomCodeRef.current && peerIdRef.current) {
+      apiLeaveRoom(roomCodeRef.current, peerIdRef.current).catch(() => {});
+    }
+    teardownNetwork();
     setMaskedState(null);
     setStatus('IDLE');
     setRoomCode('');
+    setMyPeerId('');
+    setIsHost(false);
     setErrorMessage('');
     setDisprovedCardReveal(null);
     setAccusationReveal(null);
-  }, []);
+  }, [teardownNetwork]);
 
   const closeDisprovedCardReveal = useCallback(() => {
     setDisprovedCardReveal(null);
@@ -245,10 +351,9 @@ export function useCluedoGame() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (hostServerRef.current) hostServerRef.current.destroy();
-      if (guestClientRef.current) guestClientRef.current.destroy();
+      teardownNetwork();
     };
-  }, []);
+  }, [teardownNetwork]);
 
   const myPlayer: MaskedPlayer | undefined = maskedState?.players.find(
     (p) => p.peerId === myPeerId
@@ -278,8 +383,8 @@ export function useCluedoGame() {
       moveToken,
       useSecretPassage,
       makeSuggestion,
-      disproveCard,
-      makeAccusation,
+      disproveCard: disproveCardAction,
+      makeAccusation: makeAccusationAction,
       endTurn,
       sendChatMessage,
       leaveGame,

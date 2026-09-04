@@ -65,7 +65,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleCopyInvite = () => {
     sounds.playPencilMark();
-    const inviteUrl = `${window.location.origin}?join=${roomCode}`;
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?join=${roomCode}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
@@ -86,9 +86,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-[#d4af37]/30 pb-6">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#d4af37] animate-pulse" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-deco uppercase tracking-[0.2em] text-[#d4af37] font-bold">
-                P2P Host-Authoritative Match Lobby
+                Server-Authoritative Match Lobby • Real-Time Sync
               </span>
             </div>
             <h2 className="font-deco font-black text-2xl sm:text-3xl text-[#f4e4bc] mt-1 tracking-wider">
@@ -334,6 +334,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       {/* Join Code Input (if joining) */}
       {tab === 'JOIN' && (
         <div className="space-y-1.5">
+          {joinCodeInput && (
+            <div className="p-2.5 rounded-xl bg-[#251610] border border-[#d4af37]/50 flex items-center justify-between text-xs font-mono text-[#f4e4bc] animate-fade-in">
+              <span className="flex items-center space-x-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Invited to Room: <strong className="text-[#d4af37] font-bold">{joinCodeInput}</strong></span>
+              </span>
+              <span className="text-[10px] text-[#baa479] font-serif-vintage italic">Direct Invite Loaded</span>
+            </div>
+          )}
           <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
             6-Character Room Code
           </label>
