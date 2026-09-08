@@ -589,10 +589,10 @@ export class HostController {
       handsMap[player.peerId] = player.hand;
     }
 
-    // 3. Compact logs to last 25 entries to prevent large payload drops
+    // 3. Compact logs to last 8 entries to ensure packet is ultra-lean (<1.5KB) and never dropped
     const compactState: MaskedGameState = {
       ...maskStateForPeer(this.masterState, '__SPECTATOR__'),
-      logs: this.masterState.logs.slice(-25),
+      logs: this.masterState.logs.slice(-8),
     };
 
     // 4. Single Unified Broadcast packet (Instantly received by all 5+ players concurrently)
@@ -602,6 +602,7 @@ export class HostController {
       hands: handsMap,
       disprovedForSuggester: disprovedCard || null,
       accusationResult: accusationResult || null,
+      syncTimestamp: Date.now(),
     });
 
     // 5. Send direct targeted updates over WebRTC data channels for guests
@@ -620,6 +621,7 @@ export class HostController {
         state: playerMasked,
         disprovedCard: isSuggester ? disprovedCard : null,
         accusationResult: accusationResult || null,
+        syncTimestamp: Date.now(),
       });
     }
   }
@@ -635,6 +637,7 @@ export class HostController {
           type: 'PLAYER_STATE',
           targetPeerId: player.peerId,
           state: playerMasked,
+          syncTimestamp: Date.now(),
         });
       }
     }
@@ -643,12 +646,12 @@ export class HostController {
 
   private startSyncHeartbeat() {
     if (this.syncHeartbeatTimer) clearInterval(this.syncHeartbeatTimer);
-    // Periodically re-syncs all clients every 5 seconds to prevent drift on serverless / Vercel networks
+    // Periodically re-syncs all clients every 2.5 seconds to prevent drift on serverless / Vercel networks
     this.syncHeartbeatTimer = setInterval(() => {
       if (this.masterState.phase !== 'GAME_OVER') {
         this.broadcastState();
       }
-    }, 5000);
+    }, 2500);
   }
 
   destroy() {

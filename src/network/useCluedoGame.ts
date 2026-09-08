@@ -86,13 +86,11 @@ export function useCluedoGame() {
         }
       }
 
-      // Persist to local cache for instant recovery on Vercel
+      // Persist active session metadata for lobby banner
       const currentCode = roomCodeRef.current || newState.roomCode;
       const currentPeer = myPeerIdRef.current;
       if (currentCode && currentPeer) {
         const myP = newState.players.find((p) => p.peerId === currentPeer);
-        const myHandCards = myP?.hand || [];
-        gameCache.saveClientState(currentCode, currentPeer, newState, myHandCards);
         gameCache.saveSession({
           roomCode: currentCode,
           peerId: currentPeer,
@@ -165,10 +163,13 @@ export function useCluedoGame() {
           return;
         }
 
-        // 5-Player Unified Broadcast Synchronizer
+        // Host Unified Broadcast Synchronizer
         if (payload.type === 'SYNC_STATE' && payload.state) {
-          const isPlayerInState = payload.state.players.some((p: MaskedPlayer) => p.peerId === currentPeerId);
-          if (isPlayerInState) {
+          const matchingPlayer = payload.state.players.find(
+            (p: MaskedPlayer) => p.peerId === currentPeerId
+          );
+
+          if (matchingPlayer) {
             if (joinWatchdogTimerRef.current) {
               clearTimeout(joinWatchdogTimerRef.current);
               joinWatchdogTimerRef.current = null;
@@ -178,13 +179,20 @@ export function useCluedoGame() {
               joinIntervalRef.current = null;
             }
 
-            const myHand = payload.hands?.[currentPeerId] || [];
+            const myHand = payload.hands?.[currentPeerId] || matchingPlayer.hand || [];
             const isSuggester =
               payload.disprovedForSuggester &&
               payload.disprovedForSuggester.suggesterPeerId === currentPeerId;
 
+            // Merge historical logs on client
+            const existingLogs = maskedStateRef.current?.logs || [];
+            const existingLogIds = new Set(existingLogs.map((l: any) => l.id));
+            const newLogs = (payload.state.logs || []).filter((l: any) => !existingLogIds.has(l.id));
+            const mergedLogs = [...existingLogs, ...newLogs].slice(-50);
+
             const personalState: MaskedGameState = {
               ...payload.state,
+              logs: mergedLogs,
               players: payload.state.players.map((p: MaskedPlayer) =>
                 p.peerId === currentPeerId ? { ...p, hand: myHand } : p
               ),
@@ -211,12 +219,22 @@ export function useCluedoGame() {
             clearInterval(joinIntervalRef.current);
             joinIntervalRef.current = null;
           }
-          applyStateUpdate(payload.state, payload.disprovedCard, payload.accusationResult);
+
+          const existingLogs = maskedStateRef.current?.logs || [];
+          const existingLogIds = new Set(existingLogs.map((l: any) => l.id));
+          const newLogs = (payload.state.logs || []).filter((l: any) => !existingLogIds.has(l.id));
+          const mergedLogs = [...existingLogs, ...newLogs].slice(-50);
+
+          const personalState: MaskedGameState = {
+            ...payload.state,
+            logs: mergedLogs,
+          };
+
+          applyStateUpdate(personalState, payload.disprovedCard, payload.accusationResult);
           return;
         }
 
         if (payload.type === 'STATE_UPDATE' && payload.state) {
-          // If guest sees themselves in the players list, cancel watchdog and switch to game
           const isPlayerInState = payload.state.players.some((p: MaskedPlayer) => p.peerId === currentPeerId);
           if (isPlayerInState) {
             if (joinWatchdogTimerRef.current) {
@@ -229,7 +247,6 @@ export function useCluedoGame() {
             }
             applyStateUpdate(payload.state, null, payload.accusationResult);
           } else if (!maskedStateRef.current) {
-            // General broadcast
             applyStateUpdate(payload.state, null, payload.accusationResult);
           }
         }
@@ -453,6 +470,12 @@ export function useCluedoGame() {
   const leaveGame = useCallback(() => {
     const code = roomCodeRef.current;
     const wasHost = isHostRef.current;
+    const peer = myPeerIdRef.current;
+
+    if (hostControllerRef.current) {
+      hostControllerRef.current.destroy();
+      hostControllerRef.current = null;
+    }
 
     teardownNetwork();
     setMaskedState(null);
@@ -465,10 +488,13 @@ export function useCluedoGame() {
     setAccusationReveal(null);
     setCachedSession(null);
 
-    // Clear cached session
+    // Clear cached session & states
     gameCache.clearSession();
     if (wasHost && code) {
       gameCache.clearMasterState(code);
+    }
+    if (code && peer) {
+      gameCache.clearClientState(code, peer);
     }
 
     // Clear URL param
@@ -480,6 +506,18 @@ export function useCluedoGame() {
       window.history.replaceState({}, '', url.toString());
     }
   }, [teardownNetwork]);
+
+  const discardCachedSession = useCallback(() => {
+    const session = cachedSession || gameCache.getSession();
+    if (session) {
+      gameCache.clearSession();
+      if (session.isHost) {
+        gameCache.clearMasterState(session.roomCode);
+      }
+      gameCache.clearClientState(session.roomCode, session.peerId);
+    }
+    setCachedSession(null);
+  }, [cachedSession]);
 
   const resumeSession = useCallback(() => {
     const session = gameCache.getSession();
@@ -521,7 +559,7 @@ export function useCluedoGame() {
     setAccusationReveal(null);
   }, []);
 
-  // Auto-rehydrate active session on page mount / refresh
+  // Inspect active session on mount to populate Lobby screen recovery options, NEVER force into game!
   useEffect(() => {
     if (hasAutoRehydratedRef.current) return;
     hasAutoRehydratedRef.current = true;
@@ -529,62 +567,8 @@ export function useCluedoGame() {
     const session = gameCache.getSession();
     if (session) {
       setCachedSession(session);
-
-      // Check URL params
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomParam = urlParams.get('room') || urlParams.get('join') || urlParams.get('code');
-
-      // If user directly opened URL with matching room or had an active match in progress
-      if (!roomParam || roomParam.toUpperCase() === session.roomCode.toUpperCase()) {
-        if (session.isHost) {
-          const cachedMaster = gameCache.getMasterState(session.roomCode);
-          if (cachedMaster && cachedMaster.phase !== 'GAME_OVER') {
-            setRoomCode(session.roomCode);
-            setMyPeerId(session.peerId);
-            setIsHost(true);
-            myPeerIdRef.current = session.peerId;
-            roomCodeRef.current = session.roomCode;
-            isHostRef.current = true;
-
-            const controller = new HostController(
-              session.roomCode,
-              session.peerId,
-              session.playerName,
-              session.character,
-              applyStateUpdate,
-              cachedMaster
-            );
-            hostControllerRef.current = controller;
-            clientTransport.connect(session.roomCode, session.peerId, handleIncomingPacket, true);
-            setStatus(cachedMaster.phase === 'LOBBY' ? 'LOBBY' : 'IN_GAME');
-            return;
-          }
-        } else {
-          const cachedClient = gameCache.getClientState(session.roomCode, session.peerId);
-          if (cachedClient && cachedClient.state && cachedClient.state.phase !== 'GAME_OVER') {
-            // Instantly render the cached board so there is 0ms delay
-            applyStateUpdate(cachedClient.state);
-            setRoomCode(session.roomCode);
-            setMyPeerId(session.peerId);
-            setIsHost(false);
-            myPeerIdRef.current = session.peerId;
-            roomCodeRef.current = session.roomCode;
-            isHostRef.current = false;
-
-            // Re-connect transport and send reconnect request
-            clientTransport.connect(session.roomCode, session.peerId, handleIncomingPacket, false);
-            clientTransport.send({
-              type: 'JOIN_REQUEST',
-              peerId: session.peerId,
-              name: session.playerName,
-              character: session.character,
-            });
-            return;
-          }
-        }
-      }
     }
-  }, [applyStateUpdate, handleIncomingPacket]);
+  }, []);
 
   // Window visibility & online event listeners to immediately trigger sync on Vercel
   useEffect(() => {
@@ -631,6 +615,7 @@ export function useCluedoGame() {
       createRoom,
       joinRoom,
       resumeSession,
+      discardCachedSession,
       selectCharacter,
       addAiBot,
       removePlayer,
@@ -651,6 +636,7 @@ export function useCluedoGame() {
       createRoom,
       joinRoom,
       resumeSession,
+      discardCachedSession,
       selectCharacter,
       addAiBot,
       removePlayer,

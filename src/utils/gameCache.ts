@@ -149,6 +149,11 @@ export const gameCache = {
     return null;
   },
 
+  clearClientState(roomCode: string, peerId: string): void {
+    const key = `${CLIENT_PREFIX}${roomCode.toUpperCase().trim()}_${peerId}`;
+    safeRemove(key);
+  },
+
   // 4. Detective Notebook Deductions Caching
   saveNotebook(
     roomCode: string,

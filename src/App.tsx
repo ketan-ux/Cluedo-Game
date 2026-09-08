@@ -115,6 +115,8 @@ export default function App() {
           roomCode={roomCode}
           cachedSession={cachedSession}
           onResumeSession={actions.resumeSession}
+          onDiscardSession={actions.discardCachedSession}
+          onLeaveLobby={actions.leaveGame}
           onCreateRoom={actions.createRoom}
           onJoinRoom={actions.joinRoom}
           onSelectCharacter={actions.selectCharacter}

@@ -19,6 +19,8 @@ import {
   Sparkles,
   ArrowRight,
   BookOpen,
+  Trash2,
+  LogOut,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
 import { ActiveSession } from '../utils/gameCache';
@@ -30,6 +32,8 @@ interface LobbyScreenProps {
   roomCode: string;
   cachedSession?: ActiveSession | null;
   onResumeSession?: () => void;
+  onDiscardSession?: () => void;
+  onLeaveLobby?: () => void;
   onCreateRoom: (character: Suspect, name: string) => void;
   onJoinRoom: (code: string, character: Suspect, name: string) => void;
   onSelectCharacter: (char: Suspect) => void;
@@ -46,6 +50,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   roomCode,
   cachedSession,
   onResumeSession,
+  onDiscardSession,
+  onLeaveLobby,
   onCreateRoom,
   onJoinRoom,
   onSelectCharacter,
@@ -132,6 +138,19 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </>
               )}
             </button>
+
+            {onLeaveLobby && (
+              <button
+                id="leave-lobby-btn"
+                type="button"
+                onClick={onLeaveLobby}
+                className="p-2.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-700/50 flex items-center space-x-1.5 transition-all cursor-pointer shadow"
+                title="Leave this Lobby"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-xs font-deco tracking-wider font-bold">Exit</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -354,24 +373,37 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <div className="lg:col-span-5 flex flex-col space-y-4 bg-[#1a0f0d] p-5 sm:p-6 rounded-2xl border border-[#d4af37]/40 shadow-xl">
           {/* Active Session Cache Recovery Prompt (Vercel & Tab-reload protection) */}
           {cachedSession && onResumeSession && (
-            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37] shadow-xl flex items-center justify-between animate-fade-in">
+            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37] shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
               <div className="min-w-0 pr-2">
                 <div className="flex items-center space-x-2 text-xs font-deco font-bold text-[#d4af37]">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                  <span className="truncate">Active Case: {cachedSession.roomCode}</span>
+                  <span className="truncate">Saved Case: Room #{cachedSession.roomCode}</span>
                 </div>
                 <p className="text-[11px] font-mono text-[#baa479] truncate mt-0.5">
-                  {cachedSession.isHost ? 'Host' : 'Guest'} • {cachedSession.playerName} ({cachedSession.character})
+                  Role: {cachedSession.isHost ? 'Host' : 'Guest'} • {cachedSession.playerName} ({cachedSession.character})
                 </p>
               </div>
-              <button
-                id="resume-cached-case-btn"
-                type="button"
-                onClick={onResumeSession}
-                className="px-3.5 py-2 rounded-lg bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-wider transition-all hover:scale-105 active:scale-95 shadow cursor-pointer whitespace-nowrap flex-shrink-0"
-              >
-                Resume Case
-              </button>
+              <div className="flex items-center space-x-2 flex-shrink-0">
+                <button
+                  id="resume-cached-case-btn"
+                  type="button"
+                  onClick={onResumeSession}
+                  className="px-3 py-1.5 rounded-lg bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-wider transition-all hover:scale-105 active:scale-95 shadow cursor-pointer whitespace-nowrap"
+                >
+                  {cachedSession.isHost ? 'Resume Match' : 'Rejoin Room'}
+                </button>
+                {onDiscardSession && (
+                  <button
+                    id="discard-cached-case-btn"
+                    type="button"
+                    onClick={onDiscardSession}
+                    className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-700/50 transition-all cursor-pointer shadow"
+                    title="Discard saved case and start fresh"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

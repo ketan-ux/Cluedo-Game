@@ -130,6 +130,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           <span className="text-xs font-mono text-[#baa479] hidden sm:inline">
             1920s Noir Manor • Room #{gameState.roomCode}
           </span>
+          {!isHost && (
+            <span className="text-[10px] font-mono bg-[#1a0f0d] text-[#baa479] border border-[#d4af37]/30 px-2 py-0.5 rounded flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Host Synced</span>
+            </span>
+          )}
           {myPlayer?.hasAccusedWrongly && (
             <span className="text-[10px] font-mono font-bold bg-red-950/80 text-red-300 border border-red-700/60 px-2 py-0.5 rounded flex items-center space-x-1">
               <ShieldAlert className="w-3 h-3 text-red-400" />
@@ -161,13 +167,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             <span>Detective Ledger (N)</span>
           </button>
 
-          {/* Leave / Return */}
+          {/* Leave / Exit Case */}
           <button
+            id="top-leave-match-btn"
             onClick={onLeaveGame}
-            className="p-1.5 rounded-lg bg-[#2b170e] hover:bg-[#3d2013] text-[#baa479] hover:text-white border border-[#4a2e18] transition-colors cursor-pointer"
-            title="Leave Match"
+            className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-200 hover:text-white border border-red-700/60 font-mono text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer shadow"
+            title="Exit Investigation and return to Lobby"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Exit Case</span>
           </button>
         </div>
       </header>

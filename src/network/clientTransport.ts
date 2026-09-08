@@ -251,8 +251,22 @@ class ClientTransport {
 
     // 3. Publish to global public relay (Fallback for players across firewalled NATs)
     try {
-      const packetStr = JSON.stringify(packet);
-      // Only publish to ntfy if payload is within safe limits (< 4KB)
+      let packetStr = JSON.stringify(packet);
+      if (packetStr.length >= 3900 && packet.payload?.type === 'SYNC_STATE' && packet.payload.state) {
+        // Strip logs down to 3 if needed to fit under public relay limit
+        const slimPacket = {
+          ...packet,
+          payload: {
+            ...packet.payload,
+            state: {
+              ...packet.payload.state,
+              logs: packet.payload.state.logs?.slice(-3) || [],
+            },
+          },
+        };
+        packetStr = JSON.stringify(slimPacket);
+      }
+
       if (packetStr.length < 3900) {
         await fetch(`https://ntfy.sh/${this.relayTopic}`, {
           method: 'POST',
