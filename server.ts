@@ -852,6 +852,183 @@ app.post('/api/rooms/:roomCode/leave', (req, res) => {
 });
 
 // ----------------------------------------------------
+// Global Multi-Room Real-Time Relay Broker
+// Seamless global connectivity across different Wi-Fi networks, cellular, and long distances
+// ----------------------------------------------------
+interface RelayClient {
+  peerId: string;
+  roomCode: string;
+  isHost: boolean;
+  ws: WebSocket | null;
+  sseRes: express.Response | null;
+  lastSeen: number;
+}
+
+interface RelayRoom {
+  roomCode: string;
+  clients: Map<string, RelayClient>;
+  recentPackets: any[];
+  latestSyncState: any | null;
+  lastActivity: number;
+}
+
+const relayRooms = new Map<string, RelayRoom>();
+
+function getOrCreateRelayRoom(code: string): RelayRoom {
+  const clean = cleanCode(code);
+  let room = relayRooms.get(clean);
+  if (!room) {
+    room = {
+      roomCode: clean,
+      clients: new Map(),
+      recentPackets: [],
+      latestSyncState: null,
+      lastActivity: Date.now(),
+    };
+    relayRooms.set(clean, room);
+  }
+  room.lastActivity = Date.now();
+  return room;
+}
+
+function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: string) {
+  const clean = cleanCode(roomCode);
+  const room = getOrCreateRelayRoom(clean);
+  room.lastActivity = Date.now();
+
+  // Keep a ring buffer of recent packets
+  room.recentPackets.push(packet);
+  if (room.recentPackets.length > 75) {
+    room.recentPackets.shift();
+  }
+
+  // Cache latest SYNC_STATE for instant state delivery to newly connected or reconnecting detectives
+  if (packet?.payload?.type === 'SYNC_STATE' && packet.payload.state) {
+    room.latestSyncState = packet;
+  }
+
+  const wsMessage = JSON.stringify({ type: 'RELAY_PACKET', roomCode: clean, packet });
+  const sseMessage = `data: ${JSON.stringify(packet)}\n\n`;
+
+  for (const client of room.clients.values()) {
+    if (excludeSenderId && client.peerId === excludeSenderId) {
+      continue;
+    }
+
+    // Deliver via WebSocket
+    if (client.ws && client.ws.readyState === WebSocket.OPEN) {
+      try {
+        client.ws.send(wsMessage);
+      } catch (err) {
+        console.warn(`[Relay WS] Error sending to ${client.peerId}:`, err);
+      }
+    }
+
+    // Deliver via Server-Sent Events (SSE)
+    if (client.sseRes && !client.sseRes.writableEnded) {
+      try {
+        client.sseRes.write(sseMessage);
+      } catch (err) {
+        console.warn(`[Relay SSE] Error sending to ${client.peerId}:`, err);
+      }
+    }
+  }
+}
+
+// REST Relay Send (Fail-safe HTTP delivery for any network environment)
+app.post('/api/relay/send', (req, res) => {
+  const { roomCode, packet } = req.body || {};
+  if (!roomCode || !packet || !packet.id) {
+    return res.status(400).json({ success: false, error: 'Missing roomCode or packet' });
+  }
+
+  const clean = cleanCode(roomCode);
+  broadcastRelayPacket(clean, packet, packet.senderId);
+  return res.json({ success: true, timestamp: Date.now() });
+});
+
+// REST Relay SSE (Server-Sent Events streaming pipeline for firewalled networks)
+app.get('/api/relay/sse', (req, res) => {
+  const roomCode = cleanCode(req.query.roomCode as string);
+  const peerId = (req.query.peerId as string) || `anon_${Date.now()}`;
+  if (!roomCode) {
+    return res.status(400).send('Missing roomCode');
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.write(': connected\n\n');
+
+  const room = getOrCreateRelayRoom(roomCode);
+  let client = room.clients.get(peerId);
+  if (!client) {
+    client = {
+      peerId,
+      roomCode,
+      isHost: false,
+      ws: null,
+      sseRes: res,
+      lastSeen: Date.now(),
+    };
+    room.clients.set(peerId, client);
+  } else {
+    client.sseRes = res;
+    client.lastSeen = Date.now();
+  }
+
+  // If there is an active sync state, send immediately to fast-sync this detective
+  if (room.latestSyncState) {
+    res.write(`data: ${JSON.stringify(room.latestSyncState)}\n\n`);
+  }
+
+  const ssePing = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(': ping\n\n');
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(ssePing);
+    if (client) {
+      client.sseRes = null;
+    }
+  });
+});
+
+// REST Relay Poll (Fail-safe polling for restricted mobile networks)
+app.get('/api/relay/poll', (req, res) => {
+  const roomCode = cleanCode(req.query.roomCode as string);
+  const peerId = (req.query.peerId as string) || '';
+  const since = Number(req.query.since) || 0;
+
+  if (!roomCode) {
+    return res.status(400).json({ success: false, error: 'Missing roomCode' });
+  }
+
+  const room = getOrCreateRelayRoom(roomCode);
+  const client = room.clients.get(peerId);
+  if (client) {
+    client.lastSeen = Date.now();
+  }
+
+  const freshPackets = room.recentPackets.filter(
+    (p) => p.timestamp > since && p.senderId !== peerId
+  );
+
+  return res.json({
+    success: true,
+    packets: freshPackets,
+    latestSyncState: room.latestSyncState,
+    now: Date.now(),
+  });
+});
+
+// ----------------------------------------------------
 // WebSocket Server on Port 3000 (`/ws`)
 // ----------------------------------------------------
 const wss = new WebSocketServer({ noServer: true });
@@ -884,10 +1061,58 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
-      const { type, roomCode, peerId, action } = data;
+      const { type, roomCode, peerId, isHost, packet, action } = data;
 
       if (type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+        return;
+      }
+
+      // Universal Relay Channel Join (Global seamless connection across networks)
+      if (type === 'RELAY_JOIN') {
+        const code = cleanCode(roomCode);
+        boundRoomCode = code;
+        boundPeerId = peerId;
+
+        const relayRoom = getOrCreateRelayRoom(code);
+        let client = relayRoom.clients.get(peerId);
+        if (!client) {
+          client = {
+            peerId,
+            roomCode: code,
+            isHost: !!isHost,
+            ws,
+            sseRes: null,
+            lastSeen: Date.now(),
+          };
+          relayRoom.clients.set(peerId, client);
+        } else {
+          client.ws = ws;
+          client.isHost = !!isHost;
+          client.lastSeen = Date.now();
+        }
+
+        ws.send(JSON.stringify({ type: 'RELAY_JOINED', roomCode: code, peerId }));
+
+        // Send cached latest SYNC_STATE immediately so guest gets board instantly
+        if (relayRoom.latestSyncState) {
+          ws.send(
+            JSON.stringify({
+              type: 'RELAY_PACKET',
+              roomCode: code,
+              packet: relayRoom.latestSyncState,
+            })
+          );
+        }
+        return;
+      }
+
+      // Universal Relay Packet Broadcast
+      if (type === 'RELAY_PACKET') {
+        const code = cleanCode(roomCode || boundRoomCode || '');
+        if (code && packet) {
+          broadcastRelayPacket(code, packet, boundPeerId || packet.senderId);
+        }
         return;
       }
 
@@ -935,9 +1160,19 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('close', () => {
     clearInterval(pingInterval);
     if (boundRoomCode && boundPeerId) {
+      // Clean from server rooms
       const room = rooms.get(boundRoomCode);
       if (room) {
         const client = room.clients.get(boundPeerId);
+        if (client) {
+          client.ws = null;
+          client.lastSeen = Date.now();
+        }
+      }
+      // Clean from relay rooms
+      const relayRoom = relayRooms.get(boundRoomCode);
+      if (relayRoom) {
+        const client = relayRoom.clients.get(boundPeerId);
         if (client) {
           client.ws = null;
           client.lastSeen = Date.now();
@@ -951,14 +1186,20 @@ wss.on('connection', (ws: WebSocket) => {
   });
 });
 
-// Periodic cleanup of stale rooms (no activity for 4 hours)
+// Periodic cleanup of stale rooms & relay rooms (no activity for 4 hours)
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms.entries()) {
     if (now - room.lastActivity > 4 * 60 * 60 * 1000) {
       if (room.aiTimeout) clearTimeout(room.aiTimeout);
       rooms.delete(code);
-      console.log(`[Server] Pruned stale room ${code}`);
+      console.log(`[Server] Pruned stale game room ${code}`);
+    }
+  }
+  for (const [code, room] of relayRooms.entries()) {
+    if (now - room.lastActivity > 4 * 60 * 60 * 1000) {
+      relayRooms.delete(code);
+      console.log(`[Server] Pruned stale relay room ${code}`);
     }
   }
 }, 5 * 60 * 1000);
