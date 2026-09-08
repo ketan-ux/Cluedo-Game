@@ -14,6 +14,7 @@ export default function App() {
     roomCode,
     status,
     errorMessage,
+    cachedSession,
     disprovedCardReveal,
     accusationReveal,
     actions,
@@ -110,6 +111,8 @@ export default function App() {
           isHost={isHost}
           myPeerId={myPeerId}
           roomCode={roomCode}
+          cachedSession={cachedSession}
+          onResumeSession={actions.resumeSession}
           onCreateRoom={actions.createRoom}
           onJoinRoom={actions.joinRoom}
           onSelectCharacter={actions.selectCharacter}

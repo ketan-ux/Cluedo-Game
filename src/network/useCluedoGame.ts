@@ -13,6 +13,7 @@ import {
 import { formatRoomCode, generateRoomCode } from './peerProtocol';
 import { clientTransport, TransportPacket } from './clientTransport';
 import { HostController } from '../engine/hostController';
+import { gameCache, ActiveSession } from '../utils/gameCache';
 import { sounds } from '../utils/audio';
 
 export function useCluedoGame() {
@@ -24,6 +25,7 @@ export function useCluedoGame() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [disprovedCardReveal, setDisprovedCardReveal] = useState<DisprovedCardPayload | null>(null);
   const [accusationReveal, setAccusationReveal] = useState<AccusationResultPayload | null>(null);
+  const [cachedSession, setCachedSession] = useState<ActiveSession | null>(null);
 
   const hostControllerRef = useRef<HostController | null>(null);
   const myPeerIdRef = useRef<string>('');
@@ -80,6 +82,23 @@ export function useCluedoGame() {
           sounds.playGavelBang();
         }
       }
+
+      // Persist to local cache for instant recovery on Vercel
+      const currentCode = roomCodeRef.current || newState.roomCode;
+      const currentPeer = myPeerIdRef.current;
+      if (currentCode && currentPeer) {
+        const myP = newState.players.find((p) => p.peerId === currentPeer);
+        const myHandCards = myP?.hand || [];
+        gameCache.saveClientState(currentCode, currentPeer, newState, myHandCards);
+        gameCache.saveSession({
+          roomCode: currentCode,
+          peerId: currentPeer,
+          playerName: myP?.name || 'Detective',
+          character: myP?.character || 'Miss Scarlet',
+          isHost: isHostRef.current,
+          lastActive: Date.now(),
+        });
+      }
     },
     []
   );
@@ -95,6 +114,11 @@ export function useCluedoGame() {
 
       // 1. HOST: Process requests from guests
       if (isCurrentHost && hostControllerRef.current) {
+        if (payload.type === 'SYNC_REQUEST') {
+          hostControllerRef.current.handleSyncRequest(payload.peerId);
+          return;
+        }
+
         if (payload.type === 'JOIN_REQUEST') {
           hostControllerRef.current.handleJoinRequest(
             payload.peerId,
@@ -273,7 +297,13 @@ export function useCluedoGame() {
       setErrorMessage('');
 
       try {
-        const peerId = `guest_${cleanCode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        // Reuse peerId if reconnecting to the same room
+        const existingSession = gameCache.getSession();
+        const peerId =
+          existingSession && existingSession.roomCode === cleanCode && existingSession.peerId
+            ? existingSession.peerId
+            : `guest_${cleanCode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
         setRoomCode(cleanCode);
         setMyPeerId(peerId);
         setIsHost(false);
@@ -418,6 +448,9 @@ export function useCluedoGame() {
   );
 
   const leaveGame = useCallback(() => {
+    const code = roomCodeRef.current;
+    const wasHost = isHostRef.current;
+
     teardownNetwork();
     setMaskedState(null);
     setStatus('IDLE');
@@ -427,6 +460,13 @@ export function useCluedoGame() {
     setErrorMessage('');
     setDisprovedCardReveal(null);
     setAccusationReveal(null);
+    setCachedSession(null);
+
+    // Clear cached session
+    gameCache.clearSession();
+    if (wasHost && code) {
+      gameCache.clearMasterState(code);
+    }
 
     // Clear URL param
     if (typeof window !== 'undefined') {
@@ -438,12 +478,131 @@ export function useCluedoGame() {
     }
   }, [teardownNetwork]);
 
+  const resumeSession = useCallback(() => {
+    const session = gameCache.getSession();
+    if (!session) return;
+
+    if (session.isHost) {
+      const cachedMaster = gameCache.getMasterState(session.roomCode);
+      if (cachedMaster && cachedMaster.phase !== 'GAME_OVER') {
+        teardownNetwork();
+        setRoomCode(session.roomCode);
+        setMyPeerId(session.peerId);
+        setIsHost(true);
+        myPeerIdRef.current = session.peerId;
+        roomCodeRef.current = session.roomCode;
+        isHostRef.current = true;
+
+        const controller = new HostController(
+          session.roomCode,
+          session.peerId,
+          session.playerName,
+          session.character,
+          applyStateUpdate,
+          cachedMaster
+        );
+        hostControllerRef.current = controller;
+        clientTransport.connect(session.roomCode, session.peerId, handleIncomingPacket, true);
+        setStatus(cachedMaster.phase === 'LOBBY' ? 'LOBBY' : 'IN_GAME');
+      }
+    } else {
+      joinRoom(session.roomCode, session.character, session.playerName);
+    }
+  }, [applyStateUpdate, handleIncomingPacket, joinRoom, teardownNetwork]);
+
   const closeDisprovedCardReveal = useCallback(() => {
     setDisprovedCardReveal(null);
   }, []);
 
   const closeAccusationReveal = useCallback(() => {
     setAccusationReveal(null);
+  }, []);
+
+  // Auto-rehydrate active session on page mount / refresh
+  useEffect(() => {
+    const session = gameCache.getSession();
+    if (session) {
+      setCachedSession(session);
+
+      // Check URL params
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room') || urlParams.get('join') || urlParams.get('code');
+
+      // If user directly opened URL with matching room or had an active match in progress
+      if (!roomParam || roomParam.toUpperCase() === session.roomCode.toUpperCase()) {
+        if (session.isHost) {
+          const cachedMaster = gameCache.getMasterState(session.roomCode);
+          if (cachedMaster && cachedMaster.phase !== 'GAME_OVER') {
+            setRoomCode(session.roomCode);
+            setMyPeerId(session.peerId);
+            setIsHost(true);
+            myPeerIdRef.current = session.peerId;
+            roomCodeRef.current = session.roomCode;
+            isHostRef.current = true;
+
+            const controller = new HostController(
+              session.roomCode,
+              session.peerId,
+              session.playerName,
+              session.character,
+              applyStateUpdate,
+              cachedMaster
+            );
+            hostControllerRef.current = controller;
+            clientTransport.connect(session.roomCode, session.peerId, handleIncomingPacket, true);
+            setStatus(cachedMaster.phase === 'LOBBY' ? 'LOBBY' : 'IN_GAME');
+            return;
+          }
+        } else {
+          const cachedClient = gameCache.getClientState(session.roomCode, session.peerId);
+          if (cachedClient && cachedClient.state && cachedClient.state.phase !== 'GAME_OVER') {
+            // Instantly render the cached board so there is 0ms delay
+            applyStateUpdate(cachedClient.state);
+            setRoomCode(session.roomCode);
+            setMyPeerId(session.peerId);
+            setIsHost(false);
+            myPeerIdRef.current = session.peerId;
+            roomCodeRef.current = session.roomCode;
+            isHostRef.current = false;
+
+            // Re-connect transport and send reconnect request
+            clientTransport.connect(session.roomCode, session.peerId, handleIncomingPacket, false);
+            clientTransport.send({
+              type: 'JOIN_REQUEST',
+              peerId: session.peerId,
+              name: session.playerName,
+              character: session.character,
+            });
+            return;
+          }
+        }
+      }
+    }
+  }, [applyStateUpdate, handleIncomingPacket]);
+
+  // Window visibility & online event listeners to immediately trigger sync on Vercel
+  useEffect(() => {
+    const handleSync = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        !isHostRef.current &&
+        roomCodeRef.current &&
+        myPeerIdRef.current
+      ) {
+        clientTransport.send({
+          type: 'SYNC_REQUEST',
+          peerId: myPeerIdRef.current,
+          roomCode: roomCodeRef.current,
+        });
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleSync);
+    window.addEventListener('online', handleSync);
+    return () => {
+      window.removeEventListener('visibilitychange', handleSync);
+      window.removeEventListener('online', handleSync);
+    };
   }, []);
 
   // Cleanup on unmount
@@ -468,11 +627,13 @@ export function useCluedoGame() {
     roomCode,
     status,
     errorMessage,
+    cachedSession,
     disprovedCardReveal,
     accusationReveal,
     actions: {
       createRoom,
       joinRoom,
+      resumeSession,
       selectCharacter,
       addAiBot,
       removePlayer,

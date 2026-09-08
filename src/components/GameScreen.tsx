@@ -363,6 +363,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         myHand={myHand}
         players={gameState.players}
         myPeerId={myPlayer?.peerId}
+        roomCode={gameState.roomCode}
       />
 
       {/* 2. Suggestion Modal */}

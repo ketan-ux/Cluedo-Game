@@ -21,12 +21,15 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
+import { ActiveSession } from '../utils/gameCache';
 
 interface LobbyScreenProps {
   gameState: MaskedGameState | null;
   isHost: boolean;
   myPeerId: string;
   roomCode: string;
+  cachedSession?: ActiveSession | null;
+  onResumeSession?: () => void;
   onCreateRoom: (character: Suspect, name: string) => void;
   onJoinRoom: (code: string, character: Suspect, name: string) => void;
   onSelectCharacter: (char: Suspect) => void;
@@ -41,6 +44,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   isHost,
   myPeerId,
   roomCode,
+  cachedSession,
+  onResumeSession,
   onCreateRoom,
   onJoinRoom,
   onSelectCharacter,
@@ -347,6 +352,29 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
         {/* Right: Hosting & Joining Control Panel (5 cols on lg) */}
         <div className="lg:col-span-5 flex flex-col space-y-4 bg-[#1a0f0d] p-5 sm:p-6 rounded-2xl border border-[#d4af37]/40 shadow-xl">
+          {/* Active Session Cache Recovery Prompt (Vercel & Tab-reload protection) */}
+          {cachedSession && onResumeSession && (
+            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37] shadow-xl flex items-center justify-between animate-fade-in">
+              <div className="min-w-0 pr-2">
+                <div className="flex items-center space-x-2 text-xs font-deco font-bold text-[#d4af37]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                  <span className="truncate">Active Case: {cachedSession.roomCode}</span>
+                </div>
+                <p className="text-[11px] font-mono text-[#baa479] truncate mt-0.5">
+                  {cachedSession.isHost ? 'Host' : 'Guest'} • {cachedSession.playerName} ({cachedSession.character})
+                </p>
+              </div>
+              <button
+                id="resume-cached-case-btn"
+                type="button"
+                onClick={onResumeSession}
+                className="px-3.5 py-2 rounded-lg bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-wider transition-all hover:scale-105 active:scale-95 shadow cursor-pointer whitespace-nowrap flex-shrink-0"
+              >
+                Resume Case
+              </button>
+            </div>
+          )}
+
           {/* Host / Join Tabs */}
           <div className="flex rounded-xl bg-[#0d0705] p-1 border border-[#d4af37]/30">
             <button

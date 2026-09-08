@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, MaskedPlayer, ALL_SUSPECTS, ALL_WEAPONS, ALL_ROOMS } from '../../types/cluedo';
 import { BookOpen, Check, X, HelpCircle, XCircle, FileText, Sparkles } from 'lucide-react';
 import { sounds } from '../../utils/audio';
+import { gameCache } from '../../utils/gameCache';
 
 interface DetectiveNotebookProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface DetectiveNotebookProps {
   myHand: Card[];
   players: MaskedPlayer[];
   myPeerId?: string;
+  roomCode?: string;
 }
 
 type CheckState = 'BLANK' | 'CHECK' | 'CROSS' | 'QUESTION';
@@ -19,11 +21,33 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
   myHand,
   players,
   myPeerId,
+  roomCode,
 }) => {
   // Grid state: Record<cardName, Record<playerPeerId, CheckState>>
-  const [marks, setMarks] = useState<Record<string, Record<string, CheckState>>>({});
-  const [customNotes, setCustomNotes] = useState<Record<string, string>>({});
+  const [marks, setMarks] = useState<Record<string, Record<string, CheckState>>>(() => {
+    if (roomCode && myPeerId) {
+      const cached = gameCache.getNotebook(roomCode, myPeerId);
+      if (cached?.marks) return cached.marks;
+    }
+    return {};
+  });
+
+  const [customNotes, setCustomNotes] = useState<Record<string, string>>(() => {
+    if (roomCode && myPeerId) {
+      const cached = gameCache.getNotebook(roomCode, myPeerId);
+      if (cached?.notes) return cached.notes;
+    }
+    return {};
+  });
+
   const [activeTab, setActiveTab] = useState<'ALL' | 'SUSPECTS' | 'WEAPONS' | 'ROOMS'>('ALL');
+
+  // Save changes to cache whenever marks or customNotes update
+  useEffect(() => {
+    if (roomCode && myPeerId) {
+      gameCache.saveNotebook(roomCode, myPeerId, marks, customNotes);
+    }
+  }, [marks, customNotes, roomCode, myPeerId]);
 
   // Find local player ID with strict priority: exact peerId match first, then single player with non-empty hand
   const localPlayer =

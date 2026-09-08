@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import {
@@ -85,12 +86,79 @@ interface ServerRoom {
 }
 
 const rooms = new Map<string, ServerRoom>();
+const CACHE_FILE = path.join(process.cwd(), '.rooms_cache.json');
+
+function persistRoomsToDisk() {
+  try {
+    const serializable: Record<string, any> = {};
+    for (const [code, room] of rooms.entries()) {
+      if (Date.now() - room.lastActivity < 4 * 3600 * 1000) {
+        serializable[code] = {
+          roomCode: room.roomCode,
+          hostPeerId: room.hostPeerId,
+          masterState: room.masterState,
+          createdAt: room.createdAt,
+          lastActivity: room.lastActivity,
+          clients: Array.from(room.clients.entries()).map(([peerId, c]) => ({
+            peerId: c.peerId,
+            name: c.name,
+            character: c.character,
+            isHost: c.isHost,
+            lastSeen: c.lastSeen,
+          })),
+        };
+      }
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(serializable), 'utf8');
+  } catch {
+    // Ignore in environments where filesystem write is restricted
+  }
+}
+
+function restoreRoomsFromDisk() {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      for (const [code, r] of Object.entries<any>(data)) {
+        if (Date.now() - r.lastActivity < 4 * 3600 * 1000) {
+          const clientsMap = new Map<string, ConnectedClient>();
+          for (const c of r.clients || []) {
+            clientsMap.set(c.peerId, {
+              peerId: c.peerId,
+              name: c.name,
+              character: c.character,
+              isHost: c.isHost,
+              ws: null,
+              lastSeen: c.lastSeen,
+              pendingDisproved: null,
+              pendingAccusation: null,
+            });
+          }
+          rooms.set(code, {
+            roomCode: r.roomCode,
+            hostPeerId: r.hostPeerId,
+            masterState: r.masterState,
+            clients: clientsMap,
+            aiTimeout: null,
+            createdAt: r.createdAt,
+            lastActivity: r.lastActivity,
+          });
+        }
+      }
+      console.log(`[Server] Restored ${rooms.size} cached active rooms from disk.`);
+    }
+  } catch (err) {
+    console.warn('[Server] Could not restore room cache from disk:', err);
+  }
+}
 
 // ----------------------------------------------------
 // Room Broadcasting & State Distribution
 // ----------------------------------------------------
 function broadcastRoomState(room: ServerRoom) {
   room.lastActivity = Date.now();
+  persistRoomsToDisk();
 
   for (const client of room.clients.values()) {
     const masked = maskStateForPeer(room.masterState, client.peerId);
@@ -895,10 +963,32 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+// Sync room state (for fast sync / reconnection on Vercel)
+app.get('/api/rooms/:roomCode/sync', (req, res) => {
+  const code = cleanCode(req.params.roomCode);
+  const room = rooms.get(code);
+  if (!room) {
+    return res.status(404).json({
+      success: false,
+      error: `Room "${code}" not found.`,
+    });
+  }
+  const peerId = (req.query.peerId as string) || '__SPECTATOR__';
+  const masked = maskStateForPeer(room.masterState, peerId);
+  return res.json({
+    success: true,
+    roomCode: code,
+    state: masked,
+    phase: room.masterState.phase,
+  });
+});
+
 // ----------------------------------------------------
 // Vite Middleware / Static Asset Serving
 // ----------------------------------------------------
 async function bootstrapServer() {
+  restoreRoomsFromDisk();
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: {

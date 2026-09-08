@@ -27,6 +27,7 @@ import {
   useSecretPassage,
 } from './cluedoEngine';
 import { clientTransport } from '../network/clientTransport';
+import { gameCache } from '../utils/gameCache';
 
 export class HostController {
   private roomCode: string;
@@ -38,6 +39,7 @@ export class HostController {
     accusation?: AccusationResultPayload | null
   ) => void;
   private aiTimer: NodeJS.Timeout | null = null;
+  private syncHeartbeatTimer: NodeJS.Timeout | null = null;
   private pendingDisproved: Map<string, DisprovedCardPayload | null> = new Map();
   private pendingAccusation: Map<string, AccusationResultPayload | null> = new Map();
 
@@ -50,62 +52,79 @@ export class HostController {
       state: MaskedGameState,
       disproved?: DisprovedCardPayload | null,
       accusation?: AccusationResultPayload | null
-    ) => void
+    ) => void,
+    cachedMasterState?: GameState
   ) {
     this.roomCode = roomCode;
     this.hostPeerId = hostPeerId;
     this.onStateUpdated = onStateUpdated;
 
-    const hostPlayer: Player = {
-      peerId: hostPeerId,
-      name: hostName,
-      character: hostChar,
-      isHost: true,
-      isAi: false,
-      position: {
-        x: SUSPECT_STARTING_POSITIONS[hostChar].x,
-        y: SUSPECT_STARTING_POSITIONS[hostChar].y,
-        room: null,
-      },
-      hand: [],
-      hasAccusedWrongly: false,
-      isConnected: true,
-      startingPosition: SUSPECT_STARTING_POSITIONS[hostChar],
-    };
-
-    this.masterState = {
-      roomCode,
-      phase: 'LOBBY',
-      envelope: { suspect: 'Miss Scarlet', weapon: 'Candlestick', room: 'Hall' },
-      players: [hostPlayer],
-      activePlayerIndex: 0,
-      diceRoll: null,
-      remainingSteps: 0,
-      currentSuggestion: null,
-      pendingDisproverIndex: null,
-      winner: null,
-      weaponPositions: {
-        Candlestick: 'Kitchen',
-        Dagger: 'Ballroom',
-        'Lead Pipe': 'Conservatory',
-        Revolver: 'Dining Room',
-        Rope: 'Billiard Room',
-        Wrench: 'Library',
-      },
-      turnNumber: 1,
-      logs: [
-        {
-          id: `log_${Date.now()}`,
-          timestamp: Date.now(),
-          type: 'SYSTEM',
-          message: `Investigation room created by ${hostName} (${hostChar}). Room Code: ${roomCode}`,
+    if (cachedMasterState && cachedMasterState.roomCode === roomCode) {
+      // Rehydrate master state from persistent cache
+      this.masterState = cachedMasterState;
+      const hostPlayer = this.masterState.players.find((p) => p.isHost || p.peerId === hostPeerId);
+      if (hostPlayer) {
+        hostPlayer.peerId = hostPeerId;
+        hostPlayer.isConnected = true;
+      }
+    } else {
+      const hostPlayer: Player = {
+        peerId: hostPeerId,
+        name: hostName,
+        character: hostChar,
+        isHost: true,
+        isAi: false,
+        position: {
+          x: SUSPECT_STARTING_POSITIONS[hostChar].x,
+          y: SUSPECT_STARTING_POSITIONS[hostChar].y,
+          room: null,
         },
-      ],
-      validMoves: [],
-    };
+        hand: [],
+        hasAccusedWrongly: false,
+        isConnected: true,
+        startingPosition: SUSPECT_STARTING_POSITIONS[hostChar],
+      };
+
+      this.masterState = {
+        roomCode,
+        phase: 'LOBBY',
+        envelope: { suspect: 'Miss Scarlet', weapon: 'Candlestick', room: 'Hall' },
+        players: [hostPlayer],
+        activePlayerIndex: 0,
+        diceRoll: null,
+        remainingSteps: 0,
+        currentSuggestion: null,
+        pendingDisproverIndex: null,
+        winner: null,
+        weaponPositions: {
+          Candlestick: 'Kitchen',
+          Dagger: 'Ballroom',
+          'Lead Pipe': 'Conservatory',
+          Revolver: 'Dining Room',
+          Rope: 'Billiard Room',
+          Wrench: 'Library',
+        },
+        turnNumber: 1,
+        logs: [
+          {
+            id: `log_${Date.now()}`,
+            timestamp: Date.now(),
+            type: 'SYSTEM',
+            message: `Investigation room created by ${hostName} (${hostChar}). Room Code: ${roomCode}`,
+          },
+        ],
+        validMoves: [],
+      };
+    }
+
+    // Persist to cache
+    gameCache.saveMasterState(this.roomCode, this.masterState);
 
     // Initial state update to host
     this.broadcastState();
+
+    // Start background sync heartbeat (ensures all 5-6 players stay 100% in sync on Vercel)
+    this.startSyncHeartbeat();
   }
 
   getRoomCode(): string {
@@ -122,11 +141,26 @@ export class HostController {
 
   handleJoinRequest(guestPeerId: string, guestName: string, preferredCharacter?: Suspect) {
     if (this.masterState.phase !== 'LOBBY') {
-      // Reconnection check
-      const existing = this.masterState.players.find((p) => p.peerId === guestPeerId);
+      // Reconnection check for ongoing investigation (e.g. tab reload or Vercel network switch)
+      const existing = this.masterState.players.find(
+        (p) => p.peerId === guestPeerId || (guestName && p.name.trim().toLowerCase() === guestName.trim().toLowerCase())
+      );
       if (existing) {
         existing.isConnected = true;
+        existing.peerId = guestPeerId; // Re-bind new peerId if changed
+        // Acknowledge reconnect
+        clientTransport.send({
+          type: 'JOIN_ACCEPTED',
+          targetPeerId: guestPeerId,
+          roomCode: this.roomCode,
+        });
         this.broadcastState();
+      } else {
+        clientTransport.send({
+          type: 'JOIN_REJECTED',
+          targetPeerId: guestPeerId,
+          reason: 'Investigation already underway and no matching detective was found to resume.',
+        });
       }
       return;
     }
@@ -542,6 +576,9 @@ export class HostController {
     disprovedCard?: DisprovedCardPayload | null,
     accusationResult?: AccusationResultPayload | null
   ) {
+    // 0. Cache master state to browser storage immediately
+    gameCache.saveMasterState(this.roomCode, this.masterState);
+
     // 1. Update Host local state immediately
     const hostMasked = maskStateForPeer(this.masterState, this.hostPeerId);
     this.onStateUpdated(hostMasked, disprovedCard, accusationResult);
@@ -587,10 +624,41 @@ export class HostController {
     }
   }
 
+  handleSyncRequest(guestPeerId?: string) {
+    // When a guest requests an immediate resync after a lag spike or tab switch
+    if (guestPeerId) {
+      const player = this.masterState.players.find((p) => p.peerId === guestPeerId);
+      if (player) {
+        player.isConnected = true;
+        const playerMasked = maskStateForPeer(this.masterState, player.peerId);
+        clientTransport.sendDirect(player.peerId, {
+          type: 'PLAYER_STATE',
+          targetPeerId: player.peerId,
+          state: playerMasked,
+        });
+      }
+    }
+    this.broadcastState();
+  }
+
+  private startSyncHeartbeat() {
+    if (this.syncHeartbeatTimer) clearInterval(this.syncHeartbeatTimer);
+    // Periodically re-syncs all clients every 5 seconds to prevent drift on serverless / Vercel networks
+    this.syncHeartbeatTimer = setInterval(() => {
+      if (this.masterState.phase !== 'GAME_OVER') {
+        this.broadcastState();
+      }
+    }, 5000);
+  }
+
   destroy() {
     if (this.aiTimer) {
       clearTimeout(this.aiTimer);
       this.aiTimer = null;
+    }
+    if (this.syncHeartbeatTimer) {
+      clearInterval(this.syncHeartbeatTimer);
+      this.syncHeartbeatTimer = null;
     }
   }
 }
