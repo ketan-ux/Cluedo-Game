@@ -20,15 +20,17 @@ export default function App() {
     actions,
   } = useCluedoGame();
 
+  const leaveGame = actions.leaveGame;
+
   // Safeguard: If stuck in CONNECTING for more than 8 seconds, fail gracefully
   useEffect(() => {
     if (status === 'CONNECTING') {
       const timer = setTimeout(() => {
-        actions.leaveGame();
+        leaveGame();
       }, 8000);
       return () => clearTimeout(timer);
     }
-  }, [status, actions]);
+  }, [status, leaveGame]);
 
   const isInGame = maskedState && maskedState.phase !== 'LOBBY';
 

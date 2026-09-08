@@ -55,18 +55,27 @@ export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
     players.find((p) => Array.isArray(p.hand) && p.hand.length > 0 && p.hand === myHand) ||
     (players.length === 1 ? players[0] : undefined);
 
+  const localPlayerId = localPlayer?.peerId;
+  const handCardNames = myHand.map((c) => c.name).join(',');
+
   // Pre-populate player's starting hand with checks in their own column
   useEffect(() => {
-    if (!localPlayer) return;
+    if (!localPlayerId) return;
     setMarks((prev) => {
+      let changed = false;
       const next = { ...prev };
       for (const card of myHand) {
-        if (!next[card.name]) next[card.name] = {};
-        next[card.name][localPlayer.peerId] = 'CHECK';
+        if (!next[card.name]) {
+          next[card.name] = {};
+        }
+        if (next[card.name][localPlayerId] !== 'CHECK') {
+          next[card.name] = { ...next[card.name], [localPlayerId]: 'CHECK' };
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
-  }, [myHand, localPlayer]);
+  }, [handCardNames, localPlayerId]);
 
   // Keyboard shortcut Tab or N to toggle
   useEffect(() => {

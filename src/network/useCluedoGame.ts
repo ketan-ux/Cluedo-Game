@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   AccusationResultPayload,
   Card,
@@ -31,12 +31,15 @@ export function useCluedoGame() {
   const myPeerIdRef = useRef<string>('');
   const roomCodeRef = useRef<string>('');
   const isHostRef = useRef<boolean>(false);
+  const maskedStateRef = useRef<MaskedGameState | null>(null);
+  const hasAutoRehydratedRef = useRef<boolean>(false);
   const joinWatchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
   const joinIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   myPeerIdRef.current = myPeerId;
   roomCodeRef.current = roomCode;
   isHostRef.current = isHost;
+  maskedStateRef.current = maskedState;
 
   // Cleanup helper
   const teardownNetwork = useCallback(() => {
@@ -193,7 +196,7 @@ export function useCluedoGame() {
               payload.accusationResult
             );
             return;
-          } else if (!maskedState) {
+          } else if (!maskedStateRef.current) {
             applyStateUpdate(payload.state, null, payload.accusationResult);
             return;
           }
@@ -225,14 +228,14 @@ export function useCluedoGame() {
               joinIntervalRef.current = null;
             }
             applyStateUpdate(payload.state, null, payload.accusationResult);
-          } else if (!maskedState) {
+          } else if (!maskedStateRef.current) {
             // General broadcast
             applyStateUpdate(payload.state, null, payload.accusationResult);
           }
         }
       }
     },
-    [applyStateUpdate, maskedState]
+    [applyStateUpdate]
   );
 
   // 1. Create Room (Host)
@@ -520,6 +523,9 @@ export function useCluedoGame() {
 
   // Auto-rehydrate active session on page mount / refresh
   useEffect(() => {
+    if (hasAutoRehydratedRef.current) return;
+    hasAutoRehydratedRef.current = true;
+
     const session = gameCache.getSession();
     if (session) {
       setCachedSession(session);
@@ -612,25 +618,16 @@ export function useCluedoGame() {
     };
   }, [teardownNetwork]);
 
-  const myPlayer: MaskedPlayer | undefined = maskedState?.players.find(
-    (p) => p.peerId === myPeerId
-  );
+  const myPlayer: MaskedPlayer | undefined = useMemo(() => {
+    return maskedState?.players.find((p) => p.peerId === myPeerId);
+  }, [maskedState?.players, myPeerId]);
 
-  const myHand: Card[] = myPlayer?.hand || [];
+  const myHand: Card[] = useMemo(() => {
+    return myPlayer?.hand || [];
+  }, [myPlayer?.hand]);
 
-  return {
-    maskedState,
-    isHost,
-    myPeerId,
-    myPlayer,
-    myHand,
-    roomCode,
-    status,
-    errorMessage,
-    cachedSession,
-    disprovedCardReveal,
-    accusationReveal,
-    actions: {
+  const actions = useMemo(
+    () => ({
       createRoom,
       joinRoom,
       resumeSession,
@@ -649,6 +646,41 @@ export function useCluedoGame() {
       leaveGame,
       closeDisprovedCardReveal,
       closeAccusationReveal,
-    },
+    }),
+    [
+      createRoom,
+      joinRoom,
+      resumeSession,
+      selectCharacter,
+      addAiBot,
+      removePlayer,
+      startMatch,
+      rollDice,
+      moveToken,
+      useSecretPassage,
+      makeSuggestion,
+      disproveCardAction,
+      makeAccusationAction,
+      endTurn,
+      sendChatMessage,
+      leaveGame,
+      closeDisprovedCardReveal,
+      closeAccusationReveal,
+    ]
+  );
+
+  return {
+    maskedState,
+    isHost,
+    myPeerId,
+    myPlayer,
+    myHand,
+    roomCode,
+    status,
+    errorMessage,
+    cachedSession,
+    disprovedCardReveal,
+    accusationReveal,
+    actions,
   };
 }
