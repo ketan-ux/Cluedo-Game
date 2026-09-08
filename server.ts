@@ -177,6 +177,10 @@ function broadcastRoomState(room: ServerRoom) {
         console.warn(`[WS Broadcast] Failed to send to ${client.name} (${client.peerId}):`, err);
       }
     }
+
+    // Reset pending confidential revelations after transmission so they don't persist
+    client.pendingDisproved = null;
+    client.pendingAccusation = null;
   }
 
   // Check if AI needs to take action
@@ -912,6 +916,12 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
 
   for (const client of room.clients.values()) {
     if (excludeSenderId && client.peerId === excludeSenderId) {
+      continue;
+    }
+
+    // Confidential Targeted Packet Routing (never leak direct payloads to third parties)
+    const targetPeerId = packet.payload?.targetPeerId;
+    if (targetPeerId && client.peerId !== targetPeerId) {
       continue;
     }
 

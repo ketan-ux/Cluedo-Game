@@ -20,6 +20,8 @@ import { DisprovedRevealOverlay } from './ui/DisprovedRevealOverlay';
 import { AccusationModal } from './ui/AccusationModal';
 import { GameOverModal } from './ui/GameOverModal';
 import { EnvelopeInspectionModal } from './ui/EnvelopeInspectionModal';
+import { FloatingSuggestionPopup } from './ui/FloatingSuggestionPopup';
+import { ThreeDDiceOverlay } from './ui/ThreeDDiceOverlay';
 import { BookOpen, LogOut, Sparkles, ArrowRight, Eye, ShieldAlert } from 'lucide-react';
 
 interface GameScreenProps {
@@ -97,10 +99,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       dismissedSuggestionTurn !== gameState.turnNumber &&
       !!currentRoom);
 
-  // Fallback payload for manual inspection if eliminated
+  // Envelope modal must ONLY ever show to the accuser who made the accusation, or if won (correct), or manual inspection after game is officially over
+  const canViewEnvelopeModal =
+    (!!accusationReveal &&
+      (accusationReveal.isCorrect || accusationReveal.accuserPeerId === myPlayer?.peerId)) ||
+    (isManualEnvelopeOpen && !!myPlayer?.hasAccusedWrongly && gameState.phase === 'GAME_OVER');
+
   const inspectionPayload: AccusationResultPayload | null =
-    accusationReveal ||
-    (gameState.solution && myPlayer?.hasAccusedWrongly
+    canViewEnvelopeModal && accusationReveal
+      ? accusationReveal
+      : canViewEnvelopeModal && gameState.solution && myPlayer?.hasAccusedWrongly
       ? {
           isCorrect: false,
           accuserPeerId: myPlayer.peerId,
@@ -112,9 +120,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           },
           envelope: gameState.solution,
         }
-      : null);
+      : null;
 
-  const isEnvelopeModalVisible = !!accusationReveal || isManualEnvelopeOpen;
+  const isEnvelopeModalVisible = canViewEnvelopeModal && !!inspectionPayload;
 
   return (
     <div
@@ -241,13 +249,32 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         {/* Center: Board Viewport + Bottom Hand Tray (for < xl screens) */}
         <section className="flex-1 flex flex-col justify-between items-center overflow-hidden min-w-0 h-full space-y-2">
           {/* 1:1 Mansion Board */}
-          <div className="flex-1 flex items-center justify-center w-full h-full min-h-0 min-w-0 overflow-hidden">
+          <div className="flex-1 flex items-center justify-center w-full h-full min-h-0 min-w-0 overflow-hidden relative">
             <MansionBoard
               gameState={gameState}
               myPlayer={myPlayer}
               isMyTurn={isMyTurn}
               onTileClick={(x, y) => onMoveToken(x, y)}
               onSecretPassageClick={(targetRoom) => onUseSecretPassage(targetRoom)}
+            />
+
+            {/* Floating Temporary & Collapsible Suggestion Popup for other players */}
+            <FloatingSuggestionPopup
+              suggestion={gameState.currentSuggestion}
+              phase={gameState.phase}
+              pendingDisprover={
+                gameState.pendingDisproverIndex !== null
+                  ? gameState.players[gameState.pendingDisproverIndex]
+                  : null
+              }
+              logs={gameState.logs}
+            />
+
+            {/* 3D Dice Roll Animation Overlay with Auto-Fade */}
+            <ThreeDDiceOverlay
+              diceRoll={gameState.diceRoll}
+              activePlayerName={activePlayer?.name}
+              isMyTurn={isMyTurn}
             />
           </div>
 

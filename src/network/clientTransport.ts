@@ -498,6 +498,12 @@ class ClientTransport {
     this.seenPacketIds.add(packet.id);
     this.lastReceivedTimestamp = Math.max(this.lastReceivedTimestamp, packet.timestamp || Date.now());
 
+    // Confidential Targeted Packet Drop: If addressed to someone else, do not deliver locally
+    const targetPeerId = packet.payload?.targetPeerId;
+    if (targetPeerId && targetPeerId !== this.peerId) {
+      return;
+    }
+
     // Keep deduplication set memory bounded
     if (this.seenPacketIds.size > 500) {
       const ids = Array.from(this.seenPacketIds);

@@ -104,26 +104,26 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
   const renderLogIcon = (type: GameLogEntry['type']) => {
     switch (type) {
       case 'ROLL':
-        return <Dices className="w-3.5 h-3.5 text-[#d4af37]" />;
+        return <Dices className="w-4 h-4 text-[#d4af37]" />;
       case 'MOVE':
-        return <ChevronRight className="w-3.5 h-3.5 text-amber-300" />;
+        return <ChevronRight className="w-4 h-4 text-amber-300" />;
       case 'PASSAGE':
-        return <Sparkles className="w-3.5 h-3.5 text-yellow-300" />;
+        return <Sparkles className="w-4 h-4 text-yellow-300" />;
       case 'SUGGEST':
-        return <Shield className="w-3.5 h-3.5 text-emerald-400" />;
+        return <Shield className="w-4 h-4 text-emerald-400" />;
       case 'DISPROVE':
-        return <Scroll className="w-3.5 h-3.5 text-[#d4af37]" />;
+        return <Scroll className="w-4 h-4 text-[#d4af37]" />;
       case 'NO_DISPROVE':
-        return <Sparkles className="w-3.5 h-3.5 text-amber-400" />;
+        return <Sparkles className="w-4 h-4 text-amber-400" />;
       case 'ACCUSE':
       case 'FAIL_ACCUSE':
-        return <AlertTriangle className="w-3.5 h-3.5 text-[#9b111e]" />;
+        return <AlertTriangle className="w-4 h-4 text-[#9b111e]" />;
       case 'WIN':
-        return <Sparkles className="w-3.5 h-3.5 text-yellow-300" />;
+        return <Sparkles className="w-4 h-4 text-yellow-300" />;
       case 'CHAT':
-        return <MessageSquare className="w-3.5 h-3.5 text-[#d4af37]" />;
+        return <MessageSquare className="w-4 h-4 text-[#d4af37]" />;
       default:
-        return <span className="text-[10px] text-[#d4af37]">•</span>;
+        return <span className="text-xs text-[#d4af37]">•</span>;
     }
   };
 
@@ -456,16 +456,16 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
 
         <div
           ref={logContainerRef}
-          className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs font-serif-vintage select-text"
+          className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-[13.5px] sm:text-sm font-serif-vintage leading-relaxed select-text"
         >
           {gameState.logs.map((log) => (
             <div
               key={log.id}
-              className={`p-2 rounded border leading-relaxed flex items-start space-x-2 ${
+              className={`p-2.5 rounded-lg border leading-relaxed flex items-start space-x-2.5 ${
                 log.type === 'WIN'
-                  ? 'bg-[#d4af37]/15 border-[#d4af37] text-[#fff4d1]'
+                  ? 'bg-[#d4af37]/15 border-[#d4af37] text-[#fff4d1] font-medium'
                   : log.type === 'FAIL_ACCUSE'
-                  ? 'bg-[#9b111e]/20 border-[#9b111e] text-[#fca5a5]'
+                  ? 'bg-[#9b111e]/20 border-[#9b111e] text-[#fca5a5] font-medium'
                   : log.type === 'DISPROVE'
                   ? 'bg-[#5c3e29]/30 border-[#d4af37]/40 text-[#f4e4bc]'
                   : log.type === 'CHAT'
@@ -474,7 +474,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
               }`}
             >
               <div className="mt-0.5 flex-shrink-0">{renderLogIcon(log.type)}</div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 text-[13.5px] sm:text-sm">
                 {log.type === 'CHAT' && log.playerName ? (
                   <span className="font-bold text-[#d4af37] mr-1.5 font-deco">[{log.playerName}]:</span>
                 ) : null}

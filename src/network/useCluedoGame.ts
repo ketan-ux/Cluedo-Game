@@ -73,16 +73,22 @@ export function useCluedoGame() {
       }
 
       if (disproved) {
-        setDisprovedCardReveal(disproved);
-        sounds.playCardSlide();
+        // Strictly only reveal confidential disproved card to the suggester who initiated the suggestion!
+        if (disproved.suggesterPeerId === myPeerIdRef.current) {
+          setDisprovedCardReveal(disproved);
+          sounds.playCardSlide();
+        }
       }
 
       if (accusation) {
-        setAccusationReveal(accusation);
-        if (accusation.isCorrect) {
-          sounds.playVictoryFanfare();
-        } else {
-          sounds.playGavelBang();
+        // Strictly only reveal accusation envelope inspection to the accuser or if won!
+        if (accusation.isCorrect || accusation.accuserPeerId === myPeerIdRef.current) {
+          setAccusationReveal(accusation);
+          if (accusation.isCorrect) {
+            sounds.playVictoryFanfare();
+          } else {
+            sounds.playGavelBang();
+          }
         }
       }
 

@@ -587,7 +587,7 @@ export class HostController {
       !!accusationResult && accusationResult.accuserPeerId === this.hostPeerId;
     const canHostInspectEnvelope =
       !!accusationResult &&
-      (accusationResult.isCorrect || isHostAccuser || hostMasked.solution !== null);
+      (accusationResult.isCorrect || isHostAccuser);
 
     this.onStateUpdated(
       hostMasked,
@@ -622,7 +622,7 @@ export class HostController {
         !!accusationResult && accusationResult.accuserPeerId === player.peerId;
       const canInspectEnvelope =
         !!accusationResult &&
-        (accusationResult.isCorrect || isAccuser || playerMasked.solution !== null);
+        (accusationResult.isCorrect || isAccuser);
 
       clientTransport.sendDirect(player.peerId, {
         type: 'PLAYER_STATE',

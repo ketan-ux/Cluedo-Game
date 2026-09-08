@@ -609,19 +609,18 @@ export function maskStateForPeer(masterState: GameState, recipientPeerId: string
   const isEliminated = !!recipientPlayer?.hasAccusedWrongly;
   const isGameOver = masterState.phase === 'GAME_OVER';
 
-  // Envelope solution is revealed if game is over OR if this player has been eliminated (they inspected the envelope)
-  const shouldRevealEnvelope = isGameOver || isEliminated;
+  // Envelope solution is revealed strictly if the game is over
+  const shouldRevealEnvelope = isGameOver;
   const solution = shouldRevealEnvelope ? masterState.envelope : null;
 
   // Accusation result:
-  // If game is over or recipient is the accuser or accusation was correct, send full result
+  // ONLY the accuser (or everyone ONLY IF the accusation was correct or game is over) receives the result
   let lastAccusationResult: AccusationResultPayload | null = null;
   if (masterState.lastAccusationResult) {
     if (
       isGameOver ||
-      masterState.lastAccusationResult.accuserPeerId === recipientPeerId ||
       masterState.lastAccusationResult.isCorrect ||
-      isEliminated
+      masterState.lastAccusationResult.accuserPeerId === recipientPeerId
     ) {
       lastAccusationResult = masterState.lastAccusationResult;
     }
