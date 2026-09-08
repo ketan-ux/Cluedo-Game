@@ -179,7 +179,10 @@ export function useCluedoGame() {
               joinIntervalRef.current = null;
             }
 
-            const myHand = payload.hands?.[currentPeerId] || matchingPlayer.hand || [];
+            const existingMyPlayer = maskedStateRef.current?.players.find(
+              (p: MaskedPlayer) => p.peerId === currentPeerId
+            );
+            const myHand = matchingPlayer.hand || existingMyPlayer?.hand || [];
             const isSuggester =
               payload.disprovedForSuggester &&
               payload.disprovedForSuggester.suggesterPeerId === currentPeerId;
@@ -194,18 +197,18 @@ export function useCluedoGame() {
               ...payload.state,
               logs: mergedLogs,
               players: payload.state.players.map((p: MaskedPlayer) =>
-                p.peerId === currentPeerId ? { ...p, hand: myHand } : p
+                p.peerId === currentPeerId ? { ...p, hand: myHand } : { ...p, hand: undefined }
               ),
             };
 
             applyStateUpdate(
               personalState,
               isSuggester ? payload.disprovedForSuggester : null,
-              payload.accusationResult
+              payload.accusationResult || null
             );
             return;
           } else if (!maskedStateRef.current) {
-            applyStateUpdate(payload.state, null, payload.accusationResult);
+            applyStateUpdate(payload.state, null, payload.accusationResult || null);
             return;
           }
         }

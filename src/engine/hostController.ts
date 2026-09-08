@@ -579,48 +579,57 @@ export class HostController {
     // 0. Cache master state to browser storage immediately
     gameCache.saveMasterState(this.roomCode, this.masterState);
 
-    // 1. Update Host local state immediately
+    // 1. Update Host local state immediately with strict masking
     const hostMasked = maskStateForPeer(this.masterState, this.hostPeerId);
-    this.onStateUpdated(hostMasked, disprovedCard, accusationResult);
+    const isHostSuggester =
+      !!disprovedCard && disprovedCard.suggesterPeerId === this.hostPeerId;
+    const isHostAccuser =
+      !!accusationResult && accusationResult.accuserPeerId === this.hostPeerId;
+    const canHostInspectEnvelope =
+      !!accusationResult &&
+      (accusationResult.isCorrect || isHostAccuser || hostMasked.solution !== null);
 
-    // 2. Prepare confidential hands map for each player
-    const handsMap: Record<string, Card[]> = {};
-    for (const player of this.masterState.players) {
-      handsMap[player.peerId] = player.hand;
-    }
+    this.onStateUpdated(
+      hostMasked,
+      isHostSuggester ? disprovedCard : null,
+      canHostInspectEnvelope ? accusationResult : null
+    );
 
-    // 3. Compact logs to last 8 entries to ensure packet is ultra-lean (<1.5KB) and never dropped
-    const compactState: MaskedGameState = {
+    // 2. Compact public spectator state (all hands stripped, solution hidden, logs limited to last 12)
+    const spectatorState: MaskedGameState = {
       ...maskStateForPeer(this.masterState, '__SPECTATOR__'),
-      logs: this.masterState.logs.slice(-8),
+      logs: this.masterState.logs.slice(-12),
     };
 
-    // 4. Single Unified Broadcast packet (Instantly received by all 5+ players concurrently)
+    // 3. Single Unified Broadcast packet: NEVER include handsMap, disprovedCard, or secret envelope
+    // This broadcasts public game board state (positions, phase, active player, logs) to all connected clients.
     clientTransport.send({
       type: 'SYNC_STATE',
-      state: compactState,
-      hands: handsMap,
-      disprovedForSuggester: disprovedCard || null,
-      accusationResult: accusationResult || null,
+      state: spectatorState,
+      // If accusation was correct, game is won and solution is public. Otherwise null.
+      accusationResult: accusationResult?.isCorrect ? accusationResult : null,
       syncTimestamp: Date.now(),
     });
 
-    // 5. Send direct targeted updates over WebRTC data channels for guests
+    // 4. Send direct targeted updates with confidential hand to each individual player
     for (const player of this.masterState.players) {
       if (player.isAi || player.peerId === this.hostPeerId) continue;
 
       const playerMasked = maskStateForPeer(this.masterState, player.peerId);
       const isSuggester =
-        disprovedCard &&
-        this.masterState.currentSuggestion &&
-        this.masterState.currentSuggestion.suggesterPeerId === player.peerId;
+        !!disprovedCard && disprovedCard.suggesterPeerId === player.peerId;
+      const isAccuser =
+        !!accusationResult && accusationResult.accuserPeerId === player.peerId;
+      const canInspectEnvelope =
+        !!accusationResult &&
+        (accusationResult.isCorrect || isAccuser || playerMasked.solution !== null);
 
       clientTransport.sendDirect(player.peerId, {
         type: 'PLAYER_STATE',
         targetPeerId: player.peerId,
         state: playerMasked,
         disprovedCard: isSuggester ? disprovedCard : null,
-        accusationResult: accusationResult || null,
+        accusationResult: canInspectEnvelope ? accusationResult : null,
         syncTimestamp: Date.now(),
       });
     }

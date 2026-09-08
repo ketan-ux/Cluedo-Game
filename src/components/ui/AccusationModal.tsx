@@ -113,7 +113,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
               {ALL_SUSPECTS.map((s) => {
                 const isSelected = selectedSuspect === s;
                 const color = SUSPECT_COLORS[s];
-                const inHand进 = handCardNames.has(s);
+                const inHand = handCardNames.has(s);
                 return (
                   <button
                     key={s}
@@ -133,7 +133,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
                     </div>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-semibold truncate text-[#f4e4bc] block">{s}</span>
-                      {inHand进 && (
+                      {inHand && (
                         <span className="text-[9px] font-mono text-amber-400 font-bold block">(In Hand)</span>
                       )}
                     </div>
@@ -151,7 +151,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
             <div className="flex flex-col space-y-1 max-h-44 overflow-y-auto pr-1">
               {ALL_WEAPONS.map((w) => {
                 const isSelected = selectedWeapon === w;
-                const inHand进 = handCardNames.has(w);
+                const inHand = handCardNames.has(w);
                 return (
                   <button
                     key={w}
@@ -166,7 +166,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
                     <span className="text-sm">🗡️</span>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-semibold truncate text-[#f4e4bc] block">{w}</span>
-                      {inHand进 && (
+                      {inHand && (
                         <span className="text-[9px] font-mono text-amber-400 font-bold block">(In Hand)</span>
                       )}
                     </div>
@@ -184,7 +184,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
             <div className="flex flex-col space-y-1 max-h-44 overflow-y-auto pr-1">
               {ALL_ROOMS.map((r) => {
                 const isSelected = selectedRoom === r;
-                const inHand进 = handCardNames.has(r);
+                const inHand = handCardNames.has(r);
                 return (
                   <button
                     key={r}
@@ -199,7 +199,7 @@ export const AccusationModal: React.FC<AccusationModalProps> = ({
                     <span className="text-sm">🏛️</span>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-semibold truncate text-[#f4e4bc] block">{r}</span>
-                      {inHand进 && (
+                      {inHand && (
                         <span className="text-[9px] font-mono text-amber-400 font-bold block">(In Hand)</span>
                       )}
                     </div>
