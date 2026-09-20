@@ -48,6 +48,7 @@ class ClientTransport {
   private peer: Peer | null = null;
   private hostConnection: DataConnection | null = null;
   private guestConnections: Map<string, DataConnection> = new Map();
+  private targetPeerConnections: Map<string, DataConnection> = new Map();
 
   connect(roomCode: string, peerId: string, onMessage: MessageHandler, isHost: boolean = false) {
     this.disconnect();
@@ -291,15 +292,28 @@ class ClientTransport {
         });
 
         conn.on('data', (data: any) => {
+          if (data && typeof data === 'object' && data.senderId) {
+            this.targetPeerConnections.set(data.senderId, conn);
+          }
           this.handleIncoming(data);
         });
 
         conn.on('close', () => {
           this.guestConnections.delete(conn.peer);
+          for (const [peerId, c] of this.targetPeerConnections.entries()) {
+            if (c === conn) {
+              this.targetPeerConnections.delete(peerId);
+            }
+          }
         });
 
         conn.on('error', () => {
           this.guestConnections.delete(conn.peer);
+          for (const [peerId, c] of this.targetPeerConnections.entries()) {
+            if (c === conn) {
+              this.targetPeerConnections.delete(peerId);
+            }
+          }
         });
       });
 
@@ -475,14 +489,21 @@ class ClientTransport {
       }).catch(() => {});
     }
 
-    // Direct WebRTC
-    for (const conn of this.guestConnections.values()) {
-      if (conn.open) {
+    // Direct WebRTC: Strictly deliver only to the targeted peer to avoid leaking confidential packets
+    if (this.isHost) {
+      const targetConn = this.targetPeerConnections.get(targetPeerId);
+      if (targetConn && targetConn.open) {
         try {
-          conn.send(packet);
+          targetConn.send(packet);
         } catch {
           // noop
         }
+      }
+    } else if (this.hostConnection && this.hostConnection.open) {
+      try {
+        this.hostConnection.send(packet);
+      } catch {
+        // noop
       }
     }
   }
@@ -551,6 +572,7 @@ class ClientTransport {
       }
     }
     this.guestConnections.clear();
+    this.targetPeerConnections.clear();
 
     if (this.peer) {
       try {

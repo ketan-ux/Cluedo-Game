@@ -614,14 +614,14 @@ export function maskStateForPeer(masterState: GameState, recipientPeerId: string
   const solution = shouldRevealEnvelope ? masterState.envelope : null;
 
   // Accusation result:
-  // ONLY the accuser (or everyone ONLY IF the accusation was correct or game is over) receives the result
+  // Strictly confidential: ONLY the accuser receives an incorrect accusation result.
+  // Other players NEVER receive an incorrect accusation result under any circumstance.
+  // If and only if the accusation was correct (solving the crime), it is public.
   let lastAccusationResult: AccusationResultPayload | null = null;
   if (masterState.lastAccusationResult) {
-    if (
-      isGameOver ||
-      masterState.lastAccusationResult.isCorrect ||
-      masterState.lastAccusationResult.accuserPeerId === recipientPeerId
-    ) {
+    if (masterState.lastAccusationResult.isCorrect) {
+      lastAccusationResult = masterState.lastAccusationResult;
+    } else if (masterState.lastAccusationResult.accuserPeerId === recipientPeerId) {
       lastAccusationResult = masterState.lastAccusationResult;
     }
   }

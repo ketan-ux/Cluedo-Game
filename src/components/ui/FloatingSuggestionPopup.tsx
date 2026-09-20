@@ -34,20 +34,42 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const [displayedSuggestion, setDisplayedSuggestion] = useState(suggestion);
   const [prevSuggestionKey, setPrevSuggestionKey] = useState<string>('');
+  const dismissTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const currentKey = suggestion
     ? `${suggestion.suspect}-${suggestion.weapon}-${suggestion.room}-${suggestion.suggesterPeerId || ''}`
     : '';
 
-  // Re-open and reset dismiss on new suggestion
+  // Track new suggestions and maintain display even after suggestion phase ends
   useEffect(() => {
-    if (currentKey && currentKey !== prevSuggestionKey) {
-      setPrevSuggestionKey(currentKey);
-      setIsDismissed(false);
-      setIsCollapsed(false);
+    if (suggestion) {
+      if (dismissTimeoutRef.current) {
+        clearTimeout(dismissTimeoutRef.current);
+        dismissTimeoutRef.current = null;
+      }
+      setDisplayedSuggestion(suggestion);
+      if (currentKey !== prevSuggestionKey) {
+        setPrevSuggestionKey(currentKey);
+        setIsDismissed(false);
+        setIsCollapsed(false);
+      }
+    } else if (displayedSuggestion && !isDismissed) {
+      // Keep suggestion on screen for 10 seconds after completion so other detectives have time to glance at it
+      if (!dismissTimeoutRef.current) {
+        dismissTimeoutRef.current = setTimeout(() => {
+          setIsDismissed(true);
+        }, 10000);
+      }
     }
-  }, [currentKey, prevSuggestionKey]);
+  }, [suggestion, currentKey, prevSuggestionKey, displayedSuggestion, isDismissed]);
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimeoutRef.current) clearTimeout(dismissTimeoutRef.current);
+    };
+  }, []);
 
   // Check recent logs for disprove outcome
   const latestLog = logs[logs.length - 1];
@@ -60,12 +82,14 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
     }
   }
 
-  if (!suggestion || isDismissed) {
+  const activeSuggestion = suggestion || displayedSuggestion;
+
+  if (!activeSuggestion || isDismissed) {
     return null;
   }
 
-  const charColor = suggestion.suggesterCharacter
-    ? CHARACTER_COLORS[suggestion.suggesterCharacter] || '#d4af37'
+  const charColor = activeSuggestion.suggesterCharacter
+    ? CHARACTER_COLORS[activeSuggestion.suggesterCharacter] || '#d4af37'
     : '#d4af37';
 
   return (
@@ -117,11 +141,11 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
             className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-[#251610]/50 transition-colors text-xs"
           >
             <div className="flex items-center space-x-2 truncate">
-              <span className="font-bold text-[#d4af37]">{suggestion.suspect}</span>
+              <span className="font-bold text-[#d4af37]">{activeSuggestion.suspect}</span>
               <span className="text-[#8c7457]">•</span>
-              <span className="text-[#f4ecd8]">{suggestion.weapon}</span>
+              <span className="text-[#f4ecd8]">{activeSuggestion.weapon}</span>
               <span className="text-[#8c7457]">•</span>
-              <span className="text-[#baa479]">{suggestion.room}</span>
+              <span className="text-[#baa479]">{activeSuggestion.room}</span>
             </div>
             <span className="text-[10px] font-mono text-[#d4af37] ml-2 underline">Details</span>
           </div>
@@ -134,7 +158,7 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
                 <User className="w-3.5 h-3.5 text-[#d4af37]" />
                 <span>Proposed by:</span>
                 <span className="font-bold text-[#f4ecd8] truncate" style={{ color: charColor }}>
-                  {suggestion.suggesterName || 'Detective'} ({suggestion.suggesterCharacter || 'Investigator'})
+                  {activeSuggestion.suggesterName || 'Detective'} ({activeSuggestion.suggesterCharacter || 'Investigator'})
                 </span>
               </div>
             </div>
@@ -145,7 +169,7 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
               <div className="p-2 rounded-lg bg-[#251610] border border-[#d4af37]/30 flex flex-col items-center">
                 <span className="text-[10px] uppercase tracking-wider font-deco text-[#baa479]">Suspect</span>
                 <span className="font-bold text-xs sm:text-sm text-[#f4ecd8] mt-0.5 truncate max-w-full">
-                  {suggestion.suspect}
+                  {activeSuggestion.suspect}
                 </span>
               </div>
 
@@ -153,7 +177,7 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
               <div className="p-2 rounded-lg bg-[#251610] border border-[#d4af37]/30 flex flex-col items-center">
                 <span className="text-[10px] uppercase tracking-wider font-deco text-[#baa479]">Weapon</span>
                 <span className="font-bold text-xs sm:text-sm text-[#f4ecd8] mt-0.5 truncate max-w-full">
-                  {suggestion.weapon}
+                  {activeSuggestion.weapon}
                 </span>
               </div>
 
@@ -161,7 +185,7 @@ export const FloatingSuggestionPopup: React.FC<FloatingSuggestionPopupProps> = (
               <div className="p-2 rounded-lg bg-[#251610] border border-[#d4af37]/30 flex flex-col items-center">
                 <span className="text-[10px] uppercase tracking-wider font-deco text-[#baa479]">Room</span>
                 <span className="font-bold text-xs sm:text-sm text-[#f4ecd8] mt-0.5 truncate max-w-full">
-                  {suggestion.room}
+                  {activeSuggestion.room}
                 </span>
               </div>
             </div>

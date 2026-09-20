@@ -99,20 +99,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       dismissedSuggestionTurn !== gameState.turnNumber &&
       !!currentRoom);
 
-  // Envelope modal must ONLY ever show to the accuser who made the accusation, or if won (correct), or manual inspection after game is officially over
+  // Envelope modal must ONLY ever show to the accuser who made the accusation, or manual inspection after game is officially over
+  const isAccuser = Boolean(
+    myPlayer?.peerId &&
+    accusationReveal?.accuserPeerId &&
+    accusationReveal.accuserPeerId === myPlayer.peerId
+  );
+
   const canViewEnvelopeModal =
-    (!!accusationReveal &&
-      (accusationReveal.isCorrect || accusationReveal.accuserPeerId === myPlayer?.peerId)) ||
+    (!!accusationReveal && (accusationReveal.isCorrect || isAccuser)) ||
     (isManualEnvelopeOpen && !!myPlayer?.hasAccusedWrongly && gameState.phase === 'GAME_OVER');
 
   const inspectionPayload: AccusationResultPayload | null =
-    canViewEnvelopeModal && accusationReveal
+    canViewEnvelopeModal && accusationReveal && (accusationReveal.isCorrect || isAccuser)
       ? accusationReveal
-      : canViewEnvelopeModal && gameState.solution && myPlayer?.hasAccusedWrongly
+      : canViewEnvelopeModal && isManualEnvelopeOpen && gameState.solution && myPlayer?.hasAccusedWrongly
       ? {
           isCorrect: false,
-          accuserPeerId: myPlayer.peerId,
-          accuserName: myPlayer.name,
+          accuserPeerId: myPlayer?.peerId || '',
+          accuserName: myPlayer?.name || 'Detective',
           accusation: gameState.lastAccusationResult?.accusation || {
             suspect: gameState.solution.suspect,
             weapon: gameState.solution.weapon,

@@ -456,7 +456,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
 
         <div
           ref={logContainerRef}
-          className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-[13.5px] sm:text-sm font-serif-vintage leading-relaxed select-text"
+          className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-sm sm:text-base font-serif-vintage leading-relaxed select-text"
         >
           {gameState.logs.map((log) => (
             <div
@@ -474,7 +474,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({
               }`}
             >
               <div className="mt-0.5 flex-shrink-0">{renderLogIcon(log.type)}</div>
-              <div className="min-w-0 flex-1 text-[13.5px] sm:text-sm">
+              <div className="min-w-0 flex-1 text-sm sm:text-base leading-relaxed">
                 {log.type === 'CHAT' && log.playerName ? (
                   <span className="font-bold text-[#d4af37] mr-1.5 font-deco">[{log.playerName}]:</span>
                 ) : null}

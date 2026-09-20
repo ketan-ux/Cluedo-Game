@@ -56,31 +56,68 @@ function safeRemove(key: string): void {
   memoryStore.delete(key);
 }
 
+// Tab-isolated session storage to strictly prevent peer identity collisions across multiple tabs
+const tabSessionMemoryStore = new Map<string, string>();
+
+function safeGetSession(): string | null {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const sess = window.sessionStorage.getItem(SESSION_KEY);
+      if (sess) return sess;
+    }
+  } catch {
+    // sessionStorage restricted or disabled
+  }
+  return tabSessionMemoryStore.get(SESSION_KEY) || null;
+}
+
+function safeSetSession(value: string): void {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(SESSION_KEY, value);
+    }
+  } catch {
+    // sessionStorage restricted
+  }
+  tabSessionMemoryStore.set(SESSION_KEY, value);
+}
+
+function safeRemoveSession(): void {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.removeItem(SESSION_KEY);
+    }
+  } catch {
+    // noop
+  }
+  tabSessionMemoryStore.delete(SESSION_KEY);
+}
+
 export const gameCache = {
-  // 1. User Session Management
+  // 1. User Session Management (Isolated per tab)
   saveSession(session: ActiveSession): void {
-    safeSet(SESSION_KEY, JSON.stringify(session));
+    safeSetSession(JSON.stringify(session));
   },
 
   getSession(): ActiveSession | null {
-    const data = safeGet(SESSION_KEY);
+    const data = safeGetSession();
     if (!data) return null;
     try {
       const session: ActiveSession = JSON.parse(data);
       // Expire sessions older than 24 hours
       if (Date.now() - session.lastActive > 24 * 60 * 60 * 1000) {
-        safeRemove(SESSION_KEY);
+        safeRemoveSession();
         return null;
       }
       return session;
     } catch {
-      safeRemove(SESSION_KEY);
+      safeRemoveSession();
       return null;
     }
   },
 
   clearSession(): void {
-    safeRemove(SESSION_KEY);
+    safeRemoveSession();
   },
 
   // 2. Host Master Game State Caching (All Secret Envelopes, Hands, Board State)

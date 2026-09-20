@@ -72,23 +72,50 @@ export function useCluedoGame() {
         setStatus('IN_GAME');
       }
 
-      if (disproved) {
-        // Strictly only reveal confidential disproved card to the suggester who initiated the suggestion!
-        if (disproved.suggesterPeerId === myPeerIdRef.current) {
-          setDisprovedCardReveal(disproved);
-          sounds.playCardSlide();
+      if (newState.phase === 'ROLL' || newState.phase === 'MOVE' || newState.phase === 'SUGGEST') {
+        setDisprovedCardReveal(null);
+        setAccusationReveal(null);
+      }
+
+      if (disproved !== undefined) {
+        if (disproved) {
+          // Strictly only reveal confidential disproved card to the suggester who initiated the suggestion!
+          const isSuggester = Boolean(
+            myPeerIdRef.current &&
+            disproved.suggesterPeerId &&
+            disproved.suggesterPeerId === myPeerIdRef.current
+          );
+          if (isSuggester) {
+            setDisprovedCardReveal(disproved);
+            sounds.playCardSlide();
+          } else {
+            setDisprovedCardReveal(null);
+          }
+        } else {
+          setDisprovedCardReveal(null);
         }
       }
 
-      if (accusation) {
-        // Strictly only reveal accusation envelope inspection to the accuser or if won!
-        if (accusation.isCorrect || accusation.accuserPeerId === myPeerIdRef.current) {
-          setAccusationReveal(accusation);
-          if (accusation.isCorrect) {
-            sounds.playVictoryFanfare();
+      if (accusation !== undefined) {
+        if (accusation) {
+          // Strictly only reveal accusation envelope inspection to the accuser or if crime was solved (correct)!
+          const isAccuser = Boolean(
+            myPeerIdRef.current &&
+            accusation.accuserPeerId &&
+            accusation.accuserPeerId === myPeerIdRef.current
+          );
+          if (accusation.isCorrect || isAccuser) {
+            setAccusationReveal(accusation);
+            if (accusation.isCorrect) {
+              sounds.playVictoryFanfare();
+            } else {
+              sounds.playGavelBang();
+            }
           } else {
-            sounds.playGavelBang();
+            setAccusationReveal(null);
           }
+        } else {
+          setAccusationReveal(null);
         }
       }
 
@@ -209,12 +236,16 @@ export function useCluedoGame() {
 
             applyStateUpdate(
               personalState,
-              isSuggester ? payload.disprovedForSuggester : null,
-              payload.accusationResult || null
+              null,
+              payload.accusationResult?.isCorrect ? payload.accusationResult : null
             );
             return;
           } else if (!maskedStateRef.current) {
-            applyStateUpdate(payload.state, null, payload.accusationResult || null);
+            applyStateUpdate(
+              payload.state,
+              null,
+              payload.accusationResult?.isCorrect ? payload.accusationResult : null
+            );
             return;
           }
         }
@@ -326,10 +357,13 @@ export function useCluedoGame() {
       setErrorMessage('');
 
       try {
-        // Reuse peerId if reconnecting to the same room
+        // Reuse peerId only if reconnecting as a guest to the same room
         const existingSession = gameCache.getSession();
         const peerId =
-          existingSession && existingSession.roomCode === cleanCode && existingSession.peerId
+          existingSession &&
+          !existingSession.isHost &&
+          existingSession.roomCode === cleanCode &&
+          existingSession.peerId
             ? existingSession.peerId
             : `guest_${cleanCode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -387,11 +421,22 @@ export function useCluedoGame() {
     if (isHostRef.current && hostControllerRef.current) {
       hostControllerRef.current.handlePlayerAction(peerId, action);
     } else {
-      clientTransport.send({
-        type: 'PLAYER_ACTION',
-        peerId,
-        action,
-      });
+      const hostPlayer = maskedStateRef.current?.players.find((p) => p.isHost);
+      const hostPeerId = hostPlayer?.peerId;
+      if (hostPeerId) {
+        clientTransport.sendDirect(hostPeerId, {
+          type: 'PLAYER_ACTION',
+          targetPeerId: hostPeerId,
+          peerId,
+          action,
+        });
+      } else {
+        clientTransport.send({
+          type: 'PLAYER_ACTION',
+          peerId,
+          action,
+        });
+      }
     }
   }, []);
 

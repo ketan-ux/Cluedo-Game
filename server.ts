@@ -1027,7 +1027,10 @@ app.get('/api/relay/poll', (req, res) => {
   }
 
   const freshPackets = room.recentPackets.filter(
-    (p) => p.timestamp > since && p.senderId !== peerId
+    (p) =>
+      p.timestamp > since &&
+      p.senderId !== peerId &&
+      (!p.payload?.targetPeerId || p.payload.targetPeerId === peerId)
   );
 
   return res.json({
