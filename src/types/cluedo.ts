@@ -145,6 +145,7 @@ export interface GameState {
   turnNumber: number;
   lastDisprovedCardForSuggester?: DisprovedCardPayload | null;
   lastAccusationResult?: AccusationResultPayload | null;
+  lastUnrefutedSuggestion?: SuggestionPayload | null;
   logs: GameLogEntry[];
   validMoves?: Array<{ x: number; y: number; isDoorway?: boolean; targetRoom?: Room }>;
   turnHasSuggested?: boolean;
@@ -164,6 +165,7 @@ export interface MaskedGameState {
   turnNumber: number;
   lastDisprovedCardForSuggester?: DisprovedCardPayload | null;
   lastAccusationResult?: AccusationResultPayload | null;
+  lastUnrefutedSuggestion?: SuggestionPayload | null;
   solution?: {
     suspect: Suspect;
     weapon: Weapon;

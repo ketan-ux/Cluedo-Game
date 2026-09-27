@@ -392,10 +392,11 @@ export function makeSuggestion(
       ...state,
       players: updatedPlayers,
       weaponPositions: updatedWeapons,
-      currentSuggestion: null,
+      currentSuggestion: suggestionPayload,
       pendingDisproverIndex: null,
       phase: 'ACCUSE',
       turnHasSuggested: true,
+      lastUnrefutedSuggestion: suggestionPayload,
       logs: [...state.logs, suggestLog, noDisproveLog],
     };
 
@@ -597,6 +598,7 @@ export function endTurn(state: GameState): GameState {
     validMoves: [],
     turnHasSuggested: false,
     lastDisprovedCardForSuggester: null,
+    lastUnrefutedSuggestion: null,
     logs: [...state.logs, nextLog],
   };
 }
@@ -682,6 +684,7 @@ export function maskStateForPeer(masterState: GameState, recipientPeerId: string
     turnNumber: masterState.turnNumber,
     lastDisprovedCardForSuggester: filteredDisprovedCard,
     lastAccusationResult,
+    lastUnrefutedSuggestion: masterState.lastUnrefutedSuggestion || null,
     solution,
     logs: masterState.logs,
     validMoves: masterState.players[masterState.activePlayerIndex]?.peerId === recipientPeerId ? masterState.validMoves : [],

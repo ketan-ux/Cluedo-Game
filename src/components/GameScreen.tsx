@@ -22,6 +22,7 @@ import { GameOverModal } from './ui/GameOverModal';
 import { EnvelopeInspectionModal } from './ui/EnvelopeInspectionModal';
 import { FloatingSuggestionPopup } from './ui/FloatingSuggestionPopup';
 import { ThreeDDiceOverlay } from './ui/ThreeDDiceOverlay';
+import { UnrefutedTheoryModal } from './ui/UnrefutedTheoryModal';
 import { BookOpen, LogOut, Sparkles, ArrowRight, Eye, ShieldAlert } from 'lucide-react';
 
 interface GameScreenProps {
@@ -68,6 +69,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isAccusationOpen, setIsAccusationOpen] = useState(false);
   const [isManualEnvelopeOpen, setIsManualEnvelopeOpen] = useState(false);
   const [dismissedSuggestionTurn, setDismissedSuggestionTurn] = useState<number | null>(null);
+  const [dismissedAccusationKeys, setDismissedAccusationKeys] = useState<Set<string>>(new Set());
+  const [dismissedUnrefutedTurn, setDismissedUnrefutedTurn] = useState<number | null>(null);
+  const [prefilledAccusation, setPrefilledAccusation] = useState<{ suspect: Suspect; weapon: Weapon; room: Room } | null>(null);
 
   const activePlayer = gameState.players[gameState.activePlayerIndex];
   const isMyTurn = myPlayer?.peerId === activePlayer?.peerId;
@@ -97,22 +101,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     (isMyTurn &&
       gameState.phase === 'SUGGEST' &&
       dismissedSuggestionTurn !== gameState.turnNumber &&
+      !gameState.turnHasSuggested &&
       !!currentRoom);
 
-  // Envelope modal must ONLY ever show to the accuser who made the accusation, or manual inspection after game is officially over
-  const isAccuser = Boolean(
-    myPlayer?.peerId &&
-    accusationReveal?.accuserPeerId &&
-    accusationReveal.accuserPeerId === myPlayer.peerId
-  );
+  // Compute active accusation key to handle clean one-shot dismissals
+  const activeAccusationKey = accusationReveal
+    ? `${accusationReveal.accuserPeerId}-${accusationReveal.accusation.suspect}-${accusationReveal.accusation.weapon}-${accusationReveal.accusation.room}`
+    : gameState.lastAccusationResult
+    ? `${gameState.lastAccusationResult.accuserPeerId}-${gameState.lastAccusationResult.accusation.suspect}-${gameState.lastAccusationResult.accusation.weapon}-${gameState.lastAccusationResult.accusation.room}`
+    : '';
 
-  // Show accusation inspection modal when an accusation is made so everyone can glance at the cards
+  const isAccusationDismissed = activeAccusationKey ? dismissedAccusationKeys.has(activeAccusationKey) : false;
+
+  // Show accusation inspection modal when an accusation is made so everyone can glance at the cards, but never reopen after being dismissed
   const canViewEnvelopeModal =
-    !!accusationReveal ||
+    (!!accusationReveal && !isAccusationDismissed) ||
     (isManualEnvelopeOpen && !!myPlayer?.hasAccusedWrongly && gameState.phase === 'GAME_OVER');
 
   const inspectionPayload: AccusationResultPayload | null =
-    accusationReveal
+    accusationReveal && !isAccusationDismissed
       ? accusationReveal
       : canViewEnvelopeModal && isManualEnvelopeOpen && gameState.solution && myPlayer?.hasAccusedWrongly
       ? {
@@ -129,6 +136,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       : null;
 
   const isEnvelopeModalVisible = canViewEnvelopeModal && !!inspectionPayload;
+
+  // Breakthrough: When nobody could disprove your suggestion, show prominent explanation!
+  const shouldShowUnrefutedModal = Boolean(
+    isMyTurn &&
+    gameState.phase === 'ACCUSE' &&
+    gameState.lastUnrefutedSuggestion &&
+    dismissedUnrefutedTurn !== gameState.turnNumber &&
+    !isEnvelopeModalVisible &&
+    !isAccusationOpen
+  );
 
   return (
     <div
@@ -452,12 +469,40 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       <AccusationModal
         isOpen={isAccusationOpen}
         myHand={myHand}
+        prefilledSuspect={prefilledAccusation?.suspect}
+        prefilledWeapon={prefilledAccusation?.weapon}
+        prefilledRoom={prefilledAccusation?.room}
         onOpenNotebook={() => setIsNotebookOpen(true)}
         onAccuse={(suspect, weapon, room) => {
           setIsAccusationOpen(false);
+          setPrefilledAccusation(null);
           onMakeAccusation(suspect, weapon, room);
         }}
-        onClose={() => setIsAccusationOpen(false)}
+        onClose={() => {
+          setIsAccusationOpen(false);
+          setPrefilledAccusation(null);
+        }}
+      />
+
+      {/* Unrefuted Suggestion Breakthrough Modal for Suggester */}
+      <UnrefutedTheoryModal
+        isOpen={shouldShowUnrefutedModal}
+        suggestion={gameState.lastUnrefutedSuggestion || null}
+        myHand={myHand}
+        onClose={() => setDismissedUnrefutedTurn(gameState.turnNumber)}
+        onOpenAccusation={() => {
+          if (gameState.lastUnrefutedSuggestion) {
+            setPrefilledAccusation({
+              suspect: gameState.lastUnrefutedSuggestion.suspect,
+              weapon: gameState.lastUnrefutedSuggestion.weapon,
+              room: gameState.lastUnrefutedSuggestion.room,
+            });
+          }
+          setDismissedUnrefutedTurn(gameState.turnNumber);
+          setIsAccusationOpen(true);
+        }}
+        onOpenNotebook={() => setIsNotebookOpen(true)}
+        onPassTurn={onEndTurn}
       />
 
       {/* 6. Real Envelope Inspection Modal (Shows exact cards inside the Murder Envelope) */}
@@ -465,6 +510,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         isOpen={isEnvelopeModalVisible}
         payload={inspectionPayload}
         onClose={() => {
+          if (activeAccusationKey) {
+            setDismissedAccusationKeys((prev) => new Set([...prev, activeAccusationKey]));
+          }
           setIsManualEnvelopeOpen(false);
           onCloseAccusationReveal();
         }}

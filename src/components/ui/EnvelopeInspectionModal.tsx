@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Eye,
   BookOpen,
+  X,
 } from 'lucide-react';
 
 interface EnvelopeInspectionModalProps {
@@ -47,6 +48,17 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
           isCorrect ? 'border-[#d4af37]' : 'border-[#9b111e]'
         } p-6 sm:p-7 shadow-[0_20px_60px_rgba(0,0,0,0.95)] text-[#f4e4bc] flex flex-col space-y-5`}
       >
+        {/* Top-Right "X" Close Button */}
+        <button
+          id="close-envelope-x-btn"
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 rounded-full text-[#baa479] hover:text-[#f4e4bc] hover:bg-[#351d14] border border-[#d4af37]/30 transition-colors cursor-pointer z-10"
+          title="Close announcement"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {/* Header Ribbon */}
         <div className="flex items-center space-x-3.5 border-b border-[#d4af37]/30 pb-4">
           <div

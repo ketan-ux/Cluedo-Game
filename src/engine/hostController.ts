@@ -356,6 +356,7 @@ export class HostController {
           if (active && active.peerId === senderPeerId && this.masterState.phase === 'ROLL') {
             this.masterState = rollDice(this.masterState);
             this.broadcastState();
+            this.triggerAiIfNeeded();
           }
           break;
         }
@@ -367,6 +368,7 @@ export class HostController {
             if (typeof x === 'number' && typeof y === 'number') {
               this.masterState = moveToken(this.masterState, x, y);
               this.broadcastState();
+              this.triggerAiIfNeeded();
             }
           }
           break;
@@ -379,6 +381,7 @@ export class HostController {
             if (targetRoom) {
               this.masterState = useSecretPassage(this.masterState, targetRoom);
               this.broadcastState();
+              this.triggerAiIfNeeded();
             }
           }
           break;
@@ -492,17 +495,29 @@ export class HostController {
       this.masterState.pendingDisproverIndex !== null &&
       this.masterState.players[this.masterState.pendingDisproverIndex]?.isAi;
 
+    // If waiting for a human player to disprove, do not schedule AI step
+    const isWaitingForHumanDisprover =
+      this.masterState.phase === 'DISPROVE' &&
+      this.masterState.pendingDisproverIndex !== null &&
+      !this.masterState.players[this.masterState.pendingDisproverIndex]?.isAi;
+
+    if (isWaitingForHumanDisprover) {
+      return;
+    }
+
     if (isAiTurn || isAiDisprove) {
       // Natural, thoughtful board-game pacing so detectives can clearly glance at cards and clues
-      let delay = 2200;
+      let delay = 1800;
       if (this.masterState.phase === 'DISPROVE') {
-        delay = 2600;
+        delay = 2400;
       } else if (this.masterState.phase === 'SUGGEST') {
-        delay = 2800;
+        delay = 2400;
       } else if (this.masterState.phase === 'ACCUSE') {
-        delay = 3800;
+        delay = 3000;
       } else if (this.masterState.phase === 'ROLL') {
-        delay = 2000;
+        delay = 1800;
+      } else if (this.masterState.phase === 'MOVE') {
+        delay = 1800;
       }
 
       this.aiTimer = setTimeout(() => {
@@ -556,8 +571,12 @@ export class HostController {
         this.handlePlayerAction(activePlayer.peerId, { type: 'END_TURN' });
         return;
       }
-      const doorwayMove = validMoves.find((m) => m.isDoorway);
-      const chosenMove = doorwayMove || validMoves[Math.floor(Math.random() * validMoves.length)];
+      // AI prioritizes doorways to enter a room and make a suggestion
+      const doorwayMoves = validMoves.filter((m) => m.isDoorway);
+      const chosenMove =
+        doorwayMoves.length > 0
+          ? doorwayMoves[Math.floor(Math.random() * doorwayMoves.length)]
+          : validMoves[Math.floor(Math.random() * validMoves.length)];
 
       this.handlePlayerAction(activePlayer.peerId, {
         type: 'MOVE_TOKEN',
@@ -580,6 +599,42 @@ export class HostController {
         this.handlePlayerAction(activePlayer.peerId, { type: 'END_TURN' });
       }
     } else if (this.masterState.phase === 'ACCUSE') {
+      // Smart AI Accusation: If nobody could disprove AI's suggestion, or in late game, formulate an accusation!
+      const currentRoom = activePlayer.position.room;
+      const myHandNames = new Set(activePlayer.hand.map((c) => c.name));
+      const candidateSuspects = ALL_SUSPECTS.filter((s) => !myHandNames.has(s));
+      const candidateWeapons = ALL_WEAPONS.filter((w) => !myHandNames.has(w));
+      const candidateRooms = ALL_ROOMS.filter((r) => !myHandNames.has(r));
+
+      const lastLog = this.masterState.logs[this.masterState.logs.length - 1];
+      const secondLastLog = this.masterState.logs[this.masterState.logs.length - 2];
+      const nobodyDisprovedThisTurn =
+        (lastLog && lastLog.type === 'NO_DISPROVE') ||
+        (secondLastLog && secondLastLog.type === 'NO_DISPROVE');
+
+      const shouldAccuse =
+        (nobodyDisprovedThisTurn && currentRoom && Math.random() < 0.6) ||
+        (this.masterState.turnNumber >= 8 && Math.random() < 0.3);
+
+      if (shouldAccuse && candidateSuspects.length > 0 && candidateWeapons.length > 0) {
+        const suspect =
+          (this.masterState.currentSuggestion?.suspect) ||
+          candidateSuspects[Math.floor(Math.random() * candidateSuspects.length)];
+        const weapon =
+          (this.masterState.currentSuggestion?.weapon) ||
+          candidateWeapons[Math.floor(Math.random() * candidateWeapons.length)];
+        const room =
+          currentRoom ||
+          candidateRooms[Math.floor(Math.random() * candidateRooms.length)] ||
+          ALL_ROOMS[0];
+
+        this.handlePlayerAction(activePlayer.peerId, {
+          type: 'MAKE_ACCUSATION',
+          payload: { suspect, weapon, room },
+        });
+        return;
+      }
+
       this.handlePlayerAction(activePlayer.peerId, { type: 'END_TURN' });
     }
   }

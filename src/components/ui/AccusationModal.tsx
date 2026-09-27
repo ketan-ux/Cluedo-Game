@@ -14,6 +14,9 @@ import { AlertTriangle, X, ShieldCheck, Flame, BookOpen, Shield } from 'lucide-r
 interface AccusationModalProps {
   isOpen: boolean;
   myHand?: Card[];
+  prefilledSuspect?: Suspect;
+  prefilledWeapon?: Weapon;
+  prefilledRoom?: Room;
   onAccuse: (suspect: Suspect, weapon: Weapon, room: Room) => void;
   onClose: () => void;
   onOpenNotebook?: () => void;
@@ -22,13 +25,24 @@ interface AccusationModalProps {
 export const AccusationModal: React.FC<AccusationModalProps> = ({
   isOpen,
   myHand = [],
+  prefilledSuspect,
+  prefilledWeapon,
+  prefilledRoom,
   onAccuse,
   onClose,
   onOpenNotebook,
 }) => {
-  const [selectedSuspect, setSelectedSuspect] = useState<Suspect>(ALL_SUSPECTS[0]);
-  const [selectedWeapon, setSelectedWeapon] = useState<Weapon>(ALL_WEAPONS[0]);
-  const [selectedRoom, setSelectedRoom] = useState<Room>(ALL_ROOMS[0]);
+  const [selectedSuspect, setSelectedSuspect] = useState<Suspect>(prefilledSuspect || ALL_SUSPECTS[0]);
+  const [selectedWeapon, setSelectedWeapon] = useState<Weapon>(prefilledWeapon || ALL_WEAPONS[0]);
+  const [selectedRoom, setSelectedRoom] = useState<Room>(prefilledRoom || ALL_ROOMS[0]);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (prefilledSuspect) setSelectedSuspect(prefilledSuspect);
+      if (prefilledWeapon) setSelectedWeapon(prefilledWeapon);
+      if (prefilledRoom) setSelectedRoom(prefilledRoom);
+    }
+  }, [isOpen, prefilledSuspect, prefilledWeapon, prefilledRoom]);
 
   if (!isOpen) return null;
 

@@ -35,11 +35,14 @@ export function useCluedoGame() {
   const hasAutoRehydratedRef = useRef<boolean>(false);
   const joinWatchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
   const joinIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const dismissedAccusationsRef = useRef<Set<string>>(new Set());
+  const activeAccusationRef = useRef<AccusationResultPayload | null>(null);
 
   myPeerIdRef.current = myPeerId;
   roomCodeRef.current = roomCode;
   isHostRef.current = isHost;
   maskedStateRef.current = maskedState;
+  activeAccusationRef.current = accusationReveal;
 
   // Cleanup helper
   const teardownNetwork = useCallback(() => {
@@ -55,6 +58,7 @@ export function useCluedoGame() {
       hostControllerRef.current.destroy();
       hostControllerRef.current = null;
     }
+    dismissedAccusationsRef.current.clear();
     clientTransport.disconnect();
   }, []);
 
@@ -90,11 +94,14 @@ export function useCluedoGame() {
       // Update accusation reveal so all detectives can glance at the accused cards
       const targetAccusation = accusation || newState.lastAccusationResult;
       if (targetAccusation) {
-        setAccusationReveal(targetAccusation);
-        if (targetAccusation.isCorrect) {
-          sounds.playVictoryFanfare();
-        } else {
-          sounds.playGavelBang();
+        const key = `${targetAccusation.accuserPeerId}-${targetAccusation.accusation.suspect}-${targetAccusation.accusation.weapon}-${targetAccusation.accusation.room}`;
+        if (!dismissedAccusationsRef.current.has(key)) {
+          setAccusationReveal(targetAccusation);
+          if (targetAccusation.isCorrect) {
+            sounds.playVictoryFanfare();
+          } else {
+            sounds.playGavelBang();
+          }
         }
       }
 
@@ -599,6 +606,11 @@ export function useCluedoGame() {
   }, []);
 
   const closeAccusationReveal = useCallback(() => {
+    if (activeAccusationRef.current) {
+      const a = activeAccusationRef.current;
+      const key = `${a.accuserPeerId}-${a.accusation.suspect}-${a.accusation.weapon}-${a.accusation.room}`;
+      dismissedAccusationsRef.current.add(key);
+    }
     setAccusationReveal(null);
   }, []);
 
