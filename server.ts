@@ -872,6 +872,7 @@ interface RelayRoom {
   roomCode: string;
   clients: Map<string, RelayClient>;
   recentPackets: any[];
+  pendingTargetedPackets: Map<string, any[]>;
   latestSyncState: any | null;
   lastActivity: number;
 }
@@ -886,6 +887,7 @@ function getOrCreateRelayRoom(code: string): RelayRoom {
       roomCode: clean,
       clients: new Map(),
       recentPackets: [],
+      pendingTargetedPackets: new Map(),
       latestSyncState: null,
       lastActivity: Date.now(),
     };
@@ -895,6 +897,35 @@ function getOrCreateRelayRoom(code: string): RelayRoom {
   return room;
 }
 
+function flushPendingPacketsForClient(
+  room: RelayRoom,
+  peerId: string,
+  ws?: WebSocket | null,
+  sseRes?: express.Response | null
+) {
+  const queue = room.pendingTargetedPackets.get(peerId);
+  if (!queue || queue.length === 0) return;
+
+  const packets = [...queue];
+  queue.length = 0;
+
+  for (const pkt of packets) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: 'RELAY_PACKET', roomCode: room.roomCode, packet: pkt }));
+      } catch (err) {
+        console.warn(`[Relay WS Flush] Error sending to ${peerId}:`, err);
+      }
+    } else if (sseRes && !sseRes.writableEnded) {
+      try {
+        sseRes.write(`data: ${JSON.stringify(pkt)}\n\n`);
+      } catch (err) {
+        console.warn(`[Relay SSE Flush] Error sending to ${peerId}:`, err);
+      }
+    }
+  }
+}
+
 function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: string) {
   const clean = cleanCode(roomCode);
   const room = getOrCreateRelayRoom(clean);
@@ -902,7 +933,7 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
 
   // Keep a ring buffer of recent packets
   room.recentPackets.push(packet);
-  if (room.recentPackets.length > 75) {
+  if (room.recentPackets.length > 100) {
     room.recentPackets.shift();
   }
 
@@ -911,8 +942,11 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
     room.latestSyncState = packet;
   }
 
+  const targetPeerId = packet.payload?.targetPeerId;
   const wsMessage = JSON.stringify({ type: 'RELAY_PACKET', roomCode: clean, packet });
   const sseMessage = `data: ${JSON.stringify(packet)}\n\n`;
+
+  let deliveredToTarget = false;
 
   for (const client of room.clients.values()) {
     if (excludeSenderId && client.peerId === excludeSenderId) {
@@ -920,7 +954,6 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
     }
 
     // Confidential Targeted Packet Routing (never leak direct payloads to third parties)
-    const targetPeerId = packet.payload?.targetPeerId;
     if (targetPeerId && client.peerId !== targetPeerId) {
       continue;
     }
@@ -929,6 +962,7 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
     if (client.ws && client.ws.readyState === WebSocket.OPEN) {
       try {
         client.ws.send(wsMessage);
+        if (targetPeerId && client.peerId === targetPeerId) deliveredToTarget = true;
       } catch (err) {
         console.warn(`[Relay WS] Error sending to ${client.peerId}:`, err);
       }
@@ -938,10 +972,22 @@ function broadcastRelayPacket(roomCode: string, packet: any, excludeSenderId?: s
     if (client.sseRes && !client.sseRes.writableEnded) {
       try {
         client.sseRes.write(sseMessage);
+        if (targetPeerId && client.peerId === targetPeerId) deliveredToTarget = true;
       } catch (err) {
         console.warn(`[Relay SSE] Error sending to ${client.peerId}:`, err);
       }
     }
+  }
+
+  // If this packet was targeted to a peer who is still in the middle of connecting, buffer it
+  if (targetPeerId && !deliveredToTarget) {
+    let queue = room.pendingTargetedPackets.get(targetPeerId);
+    if (!queue) {
+      queue = [];
+      room.pendingTargetedPackets.set(targetPeerId, queue);
+    }
+    queue.push(packet);
+    if (queue.length > 50) queue.shift();
   }
 }
 
@@ -996,6 +1042,9 @@ app.get('/api/relay/sse', (req, res) => {
     res.write(`data: ${JSON.stringify(room.latestSyncState)}\n\n`);
   }
 
+  // Deliver any targeted packets queued for this detective
+  flushPendingPacketsForClient(room, peerId, null, res);
+
   const ssePing = setInterval(() => {
     if (!res.writableEnded) {
       res.write(': ping\n\n');
@@ -1021,9 +1070,27 @@ app.get('/api/relay/poll', (req, res) => {
   }
 
   const room = getOrCreateRelayRoom(roomCode);
-  const client = room.clients.get(peerId);
-  if (client) {
+  let client = room.clients.get(peerId);
+  if (!client) {
+    client = {
+      peerId,
+      roomCode,
+      isHost: false,
+      ws: null,
+      sseRes: null,
+      lastSeen: Date.now(),
+    };
+    room.clients.set(peerId, client);
+  } else {
     client.lastSeen = Date.now();
+  }
+
+  // Extract any queued packets targeted specifically to this client
+  const pendingQueue = room.pendingTargetedPackets.get(peerId) || [];
+  const flushedPending: any[] = [];
+  if (pendingQueue.length > 0) {
+    flushedPending.push(...pendingQueue);
+    pendingQueue.length = 0;
   }
 
   const freshPackets = room.recentPackets.filter(
@@ -1033,9 +1100,13 @@ app.get('/api/relay/poll', (req, res) => {
       (!p.payload?.targetPeerId || p.payload.targetPeerId === peerId)
   );
 
+  const combinedMap = new Map<string, any>();
+  for (const p of freshPackets) combinedMap.set(p.id, p);
+  for (const p of flushedPending) combinedMap.set(p.id, p);
+
   return res.json({
     success: true,
-    packets: freshPackets,
+    packets: Array.from(combinedMap.values()),
     latestSyncState: room.latestSyncState,
     now: Date.now(),
   });
@@ -1117,6 +1188,9 @@ wss.on('connection', (ws: WebSocket) => {
             })
           );
         }
+
+        // Deliver any targeted packets queued for this client
+        flushPendingPacketsForClient(relayRoom, peerId, ws);
         return;
       }
 

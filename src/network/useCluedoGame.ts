@@ -179,6 +179,16 @@ export function useCluedoGame() {
             clearInterval(joinIntervalRef.current);
             joinIntervalRef.current = null;
           }
+          if (payload.state) {
+            applyStateUpdate(payload.state);
+          } else {
+            clientTransport.send({
+              type: 'SYNC_REQUEST',
+              peerId: currentPeerId,
+              roomCode: roomCodeRef.current,
+            });
+            setStatus('LOBBY');
+          }
           return;
         }
 

@@ -31,6 +31,7 @@ class ClientTransport {
   private isConnected: boolean = false;
   private seenPacketIds: Set<string> = new Set();
   private lastReceivedTimestamp: number = 0;
+  private pendingOutbox: TransportPacket[] = [];
 
   // Origin Server WebSocket
   private ws: WebSocket | null = null;
@@ -127,6 +128,24 @@ class ClientTransport {
             isHost: this.isHost,
           })
         );
+
+        // Immediately flush any queued outbox packets
+        while (this.pendingOutbox.length > 0) {
+          const pkt = this.pendingOutbox.shift();
+          if (pkt) {
+            try {
+              ws.send(
+                JSON.stringify({
+                  type: 'RELAY_PACKET',
+                  roomCode: this.roomCode,
+                  packet: pkt,
+                })
+              );
+            } catch (err) {
+              console.warn('[Transport WS] Outbox flush error:', err);
+            }
+          }
+        }
 
         // Keep-alive ping every 12 seconds
         if (this.wsPingInterval) clearInterval(this.wsPingInterval);
@@ -230,10 +249,8 @@ class ClientTransport {
   private initPolling() {
     if (!this.isConnected) return;
 
-    // Safety net: Poll every 2.5 seconds to guarantee catch-up if socket dropped
-    this.pollInterval = setInterval(async () => {
+    const doPoll = async () => {
       if (!this.isConnected || !this.roomCode) return;
-
       try {
         const since = this.lastReceivedTimestamp;
         const res = await fetch(
@@ -252,7 +269,13 @@ class ClientTransport {
       } catch {
         // Ignore background poll errors
       }
-    }, 2500);
+    };
+
+    // Fast initial poll
+    setTimeout(doPoll, 350);
+
+    // Continuous catch-up poll
+    this.pollInterval = setInterval(doPoll, 1500);
   }
 
   // ----------------------------------------------------
@@ -275,6 +298,22 @@ class ClientTransport {
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' },
+            { urls: 'stun:openrelay.metered.ca:80' },
+            {
+              urls: 'turn:openrelay.metered.ca:80',
+              username: 'openrelayproject',
+              credential: 'openrelayproject',
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:443',
+              username: 'openrelayproject',
+              credential: 'openrelayproject',
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+              username: 'openrelayproject',
+              credential: 'openrelayproject',
+            },
           ],
         },
       });
@@ -401,7 +440,10 @@ class ClientTransport {
         sentViaWs = true;
       } catch {
         sentViaWs = false;
+        this.pendingOutbox.push(packet);
       }
+    } else {
+      this.pendingOutbox.push(packet);
     }
 
     // 3. Send via Server REST Relay (Guaranteed HTTP delivery if WebSocket was buffering)
@@ -447,12 +489,17 @@ class ClientTransport {
   sendDirect(targetPeerId: string, payload: any): void {
     if (!this.isConnected) return;
 
+    const packetPayload =
+      typeof payload === 'object' && payload !== null
+        ? { ...payload, targetPeerId }
+        : { data: payload, targetPeerId };
+
     const packet: TransportPacket = {
       id: `${this.peerId}_dir_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       senderId: this.peerId,
       roomCode: this.roomCode,
       timestamp: Date.now(),
-      payload,
+      payload: packetPayload,
     };
 
     this.seenPacketIds.add(packet.id);
@@ -476,18 +523,20 @@ class ClientTransport {
           })
         );
       } catch {
-        // noop
+        this.pendingOutbox.push(packet);
       }
     } else {
-      fetch('/api/relay/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomCode: this.roomCode,
-          packet,
-        }),
-      }).catch(() => {});
+      this.pendingOutbox.push(packet);
     }
+
+    fetch('/api/relay/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomCode: this.roomCode,
+        packet,
+      }),
+    }).catch(() => {});
 
     // Direct WebRTC: Strictly deliver only to the targeted peer to avoid leaking confidential packets
     if (this.isHost) {

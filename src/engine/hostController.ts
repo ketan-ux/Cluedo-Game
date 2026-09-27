@@ -148,11 +148,13 @@ export class HostController {
       if (existing) {
         existing.isConnected = true;
         existing.peerId = guestPeerId; // Re-bind new peerId if changed
-        // Acknowledge reconnect
+        // Acknowledge reconnect with current game state
+        const reconnectState = maskStateForPeer(this.masterState, guestPeerId);
         clientTransport.send({
           type: 'JOIN_ACCEPTED',
           targetPeerId: guestPeerId,
           roomCode: this.roomCode,
+          state: reconnectState,
         });
         this.broadcastState();
       } else {
@@ -219,12 +221,14 @@ export class HostController {
 
     this.broadcastState();
 
-    // Direct ACK to guest
+    // Direct ACK to guest with immediate masked game state
+    const guestState = maskStateForPeer(this.masterState, guestPeerId);
     clientTransport.send({
       type: 'JOIN_ACCEPTED',
       targetPeerId: guestPeerId,
       roomCode: this.roomCode,
       assignedCharacter: character,
+      state: guestState,
     });
   }
 

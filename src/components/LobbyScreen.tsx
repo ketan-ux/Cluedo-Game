@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
 import { ActiveSession } from '../utils/gameCache';
+import { getShareableInviteUrl } from '../network/peerProtocol';
 
 interface LobbyScreenProps {
   gameState: MaskedGameState | null;
@@ -77,7 +78,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleCopyInvite = () => {
     sounds.playPencilMark();
-    const inviteUrl = `${window.location.origin}${window.location.pathname}?join=${roomCode}`;
+    const inviteUrl = getShareableInviteUrl(roomCode);
     navigator.clipboard.writeText(inviteUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);

@@ -16,6 +16,11 @@ export function generateRoomCode(): string {
 export function getShareableInviteUrl(roomCode: string): string {
   if (typeof window === 'undefined') return '';
   const url = new URL(window.location.href);
-  url.searchParams.set('room', roomCode);
+  url.searchParams.set('join', roomCode);
+  url.searchParams.delete('room');
+  url.searchParams.delete('code');
+  if (url.hostname.startsWith('ais-dev-')) {
+    url.hostname = url.hostname.replace('ais-dev-', 'ais-pre-');
+  }
   return url.toString();
 }
