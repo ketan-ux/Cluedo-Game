@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidRoom(data) {
+      return data.roomCode is string
+        && data.roomCode.size() >= 4
+        && data.roomCode.size() <= 8
+        && data.hostPeerId is string
+        && data.phase is string
+        && data.stateJson is string
+        && data.lastActivity is number
+        && data.updatedAt is number;
+    }
+
+    function isValidPacket(data) {
+      return data.id is string
+        && data.roomCode is string
+        && data.senderId is string
+        && data.type is string
+        && data.payload is string
+        && data.timestamp is number;
+    }
+
+    match /rooms/{roomCode} {
+      allow read: if true;
+      allow create: if isValidRoom(request.resource.data);
+      allow update: if isValidRoom(request.resource.data);
+      allow delete: if false;
+
+      match /packets/{packetId} {
+        allow read: if true;
+        allow create: if isValidPacket(request.resource.data);
+        allow update: if false;
+        allow delete: if true;
+      }
+    }
+
+    // Health check collection
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

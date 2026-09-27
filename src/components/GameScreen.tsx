@@ -106,12 +106,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     accusationReveal.accuserPeerId === myPlayer.peerId
   );
 
+  // Show accusation inspection modal when an accusation is made so everyone can glance at the cards
   const canViewEnvelopeModal =
-    (!!accusationReveal && (accusationReveal.isCorrect || isAccuser)) ||
+    !!accusationReveal ||
     (isManualEnvelopeOpen && !!myPlayer?.hasAccusedWrongly && gameState.phase === 'GAME_OVER');
 
   const inspectionPayload: AccusationResultPayload | null =
-    canViewEnvelopeModal && accusationReveal && (accusationReveal.isCorrect || isAccuser)
+    accusationReveal
       ? accusationReveal
       : canViewEnvelopeModal && isManualEnvelopeOpen && gameState.solution && myPlayer?.hasAccusedWrongly
       ? {
@@ -275,9 +276,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               logs={gameState.logs}
             />
 
-            {/* 3D Dice Roll Animation Overlay with Auto-Fade */}
+            {/* Non-looping Corner Dice Reminder Widget */}
             <ThreeDDiceOverlay
               diceRoll={gameState.diceRoll}
+              remainingSteps={gameState.remainingSteps}
               activePlayerName={activePlayer?.name}
               isMyTurn={isMyTurn}
             />

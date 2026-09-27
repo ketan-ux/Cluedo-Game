@@ -29,17 +29,18 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
   if (!isOpen || !payload) return null;
 
   const { isCorrect, accusation, envelope, accuserName } = payload;
+  const hasEnvelope = Boolean(envelope && envelope.suspect && envelope.weapon && envelope.room);
 
-  const suspectCard = getCardByName(envelope.suspect);
-  const weaponCard = getCardByName(envelope.weapon);
-  const roomCard = getCardByName(envelope.room);
+  const suspectCard = getCardByName(hasEnvelope ? envelope!.suspect : accusation.suspect);
+  const weaponCard = getCardByName(hasEnvelope ? envelope!.weapon : accusation.weapon);
+  const roomCard = getCardByName(hasEnvelope ? envelope!.room : accusation.room);
 
-  const suspectMatch = accusation.suspect === envelope.suspect;
-  const weaponMatch = accusation.weapon === envelope.weapon;
-  const roomMatch = accusation.room === envelope.room;
+  const suspectMatch = hasEnvelope ? accusation.suspect === envelope!.suspect : false;
+  const weaponMatch = hasEnvelope ? accusation.weapon === envelope!.weapon : false;
+  const roomMatch = hasEnvelope ? accusation.room === envelope!.room : false;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 animate-fade-in overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 animate-fade-in overflow-y-auto">
       <div
         id="envelope-inspection-modal"
         className={`relative w-full max-w-2xl rounded-2xl bg-[#20130d] border-2 ${
@@ -73,7 +74,11 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
               </span>
             </div>
             <h2 className="font-deco font-black text-xl sm:text-2xl text-[#f4e4bc] mt-1 uppercase tracking-wider">
-              {isCorrect ? 'CASE SOLVED BY ACCUSATION!' : 'CONFIDENTIAL ENVELOPE INSPECTION'}
+              {isCorrect
+                ? 'CASE SOLVED BY ACCUSATION!'
+                : hasEnvelope
+                ? 'CONFIDENTIAL ENVELOPE INSPECTION'
+                : `OFFICIAL ACCUSATION BY ${accuserName.toUpperCase()}`}
             </h2>
           </div>
         </div>
@@ -93,14 +98,18 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
           )}
           <div className="space-y-1">
             <strong className="text-[#f4e4bc] font-deco font-bold uppercase tracking-wider block">
-              {isCorrect ? 'VERDICT: ABSOLUTE ACCURACY' : 'OFFICIAL CLUEDO RULE RULING:'}
+              {isCorrect
+                ? 'VERDICT: ABSOLUTE ACCURACY'
+                : hasEnvelope
+                ? 'OFFICIAL CLUEDO RULE RULING:'
+                : `INCORRECT ACCUSATION DECLARED:`}
             </strong>
             {isCorrect ? (
               <p>
                 Detective <strong className="text-[#d4af37] not-italic">{accuserName}</strong>, every
-                single piece of your indictment matches the secret murder envelope perfectly!
+                single piece of the indictment matches the secret murder envelope perfectly!
               </p>
-            ) : (
+            ) : hasEnvelope ? (
               <p>
                 As required by the rules of Cluedo, you have secretly opened and inspected the murder
                 envelope. Because your accusation did not match all three cards, you are{' '}
@@ -113,45 +122,58 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
                 </strong>{' '}
                 from your hand when asked!
               </p>
+            ) : (
+              <p>
+                Detective <strong className="text-[#d4af37] not-italic">{accuserName}</strong> made an
+                official final accusation with the cards below, but was{' '}
+                <strong className="text-red-400 font-bold not-italic">refuted</strong> by the confidential
+                envelope! They are eliminated from taking turns but will continue disproving suggestions.
+              </p>
             )}
           </div>
         </div>
 
-        {/* Comparison Section */}
+        {/* Accused / Envelope Cards Presentation */}
         <div className="flex flex-col space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-deco font-bold uppercase tracking-widest text-[#d4af37] flex items-center space-x-1.5">
               <FileText className="w-4 h-4" />
-              <span>THE TRUE MURDER ENVELOPE CONTENTS</span>
+              <span>
+                {hasEnvelope
+                  ? 'THE TRUE MURDER ENVELOPE CONTENTS'
+                  : 'ACCUSED EVIDENCE CARDS (FOR YOUR DETECTIVE NOTES)'}
+              </span>
             </span>
             <span className="text-[11px] font-serif-vintage italic text-[#baa479]">
-              Secretly unsealed for your eyes only
+              {hasEnvelope ? 'Secretly unsealed for your eyes only' : 'Publicly declared accusation'}
             </span>
           </div>
 
-          {/* 3 Solution Cards */}
+          {/* 3 Cards */}
           <div className="grid grid-cols-3 gap-2 sm:gap-4 justify-items-center bg-[#150a08] p-4 rounded-xl border border-[#d4af37]/20">
             {/* Suspect Card */}
             <div className="flex flex-col items-center space-y-1.5 w-full">
               <div className="relative">
                 <CardView card={suspectCard} size="sm" />
-                <div
-                  className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
-                    suspectMatch
-                      ? 'bg-emerald-600 border-white text-white'
-                      : 'bg-red-600 border-white text-white'
-                  }`}
-                  title={suspectMatch ? 'Matched your accusation' : 'Mismatched your accusation'}
-                >
-                  {suspectMatch ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    <XCircle className="w-4 h-4" />
-                  )}
-                </div>
+                {hasEnvelope && (
+                  <div
+                    className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
+                      suspectMatch
+                        ? 'bg-emerald-600 border-white text-white'
+                        : 'bg-red-600 border-white text-white'
+                    }`}
+                    title={suspectMatch ? 'Matched accusation' : 'Mismatched accusation'}
+                  >
+                    {suspectMatch ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                  </div>
+                )}
               </div>
               <span className="text-[10px] font-mono uppercase text-[#baa479] text-center">
-                You: <strong className="text-[#f4e4bc]">{accusation.suspect}</strong>
+                Accused: <strong className="text-[#f4e4bc]">{accusation.suspect}</strong>
               </span>
             </div>
 
@@ -159,23 +181,25 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
             <div className="flex flex-col items-center space-y-1.5 w-full">
               <div className="relative">
                 <CardView card={weaponCard} size="sm" />
-                <div
-                  className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
-                    weaponMatch
-                      ? 'bg-emerald-600 border-white text-white'
-                      : 'bg-red-600 border-white text-white'
-                  }`}
-                  title={weaponMatch ? 'Matched your accusation' : 'Mismatched your accusation'}
-                >
-                  {weaponMatch ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    <XCircle className="w-4 h-4" />
-                  )}
-                </div>
+                {hasEnvelope && (
+                  <div
+                    className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
+                      weaponMatch
+                        ? 'bg-emerald-600 border-white text-white'
+                        : 'bg-red-600 border-white text-white'
+                    }`}
+                    title={weaponMatch ? 'Matched accusation' : 'Mismatched accusation'}
+                  >
+                    {weaponMatch ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                  </div>
+                )}
               </div>
               <span className="text-[10px] font-mono uppercase text-[#baa479] text-center">
-                You: <strong className="text-[#f4e4bc]">{accusation.weapon}</strong>
+                Accused: <strong className="text-[#f4e4bc]">{accusation.weapon}</strong>
               </span>
             </div>
 
@@ -183,23 +207,25 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
             <div className="flex flex-col items-center space-y-1.5 w-full">
               <div className="relative">
                 <CardView card={roomCard} size="sm" />
-                <div
-                  className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
-                    roomMatch
-                      ? 'bg-emerald-600 border-white text-white'
-                      : 'bg-red-600 border-white text-white'
-                  }`}
-                  title={roomMatch ? 'Matched your accusation' : 'Mismatched your accusation'}
-                >
-                  {roomMatch ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : (
-                    <XCircle className="w-4 h-4" />
-                  )}
-                </div>
+                {hasEnvelope && (
+                  <div
+                    className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border ${
+                      roomMatch
+                        ? 'bg-emerald-600 border-white text-white'
+                        : 'bg-red-600 border-white text-white'
+                    }`}
+                    title={roomMatch ? 'Matched accusation' : 'Mismatched accusation'}
+                  >
+                    {roomMatch ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                  </div>
+                )}
               </div>
               <span className="text-[10px] font-mono uppercase text-[#baa479] text-center">
-                You: <strong className="text-[#f4e4bc]">{accusation.room}</strong>
+                Accused: <strong className="text-[#f4e4bc]">{accusation.room}</strong>
               </span>
             </div>
           </div>
@@ -232,7 +258,13 @@ export const EnvelopeInspectionModal: React.FC<EnvelopeInspectionModalProps> = (
             }`}
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isCorrect ? 'Claim Victory' : 'Acknowledge & Continue Spectating'}</span>
+            <span>
+              {isCorrect
+                ? 'Claim Victory'
+                : hasEnvelope
+                ? 'Acknowledge & Continue Spectating'
+                : 'Noted & Dismiss'}
+            </span>
           </button>
         </div>
       </div>

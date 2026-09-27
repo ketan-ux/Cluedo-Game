@@ -72,50 +72,29 @@ export function useCluedoGame() {
         setStatus('IN_GAME');
       }
 
-      if (newState.phase === 'ROLL' || newState.phase === 'MOVE' || newState.phase === 'SUGGEST') {
-        setDisprovedCardReveal(null);
-        setAccusationReveal(null);
-      }
-
-      if (disproved !== undefined) {
-        if (disproved) {
-          // Strictly only reveal confidential disproved card to the suggester who initiated the suggestion!
-          const isSuggester = Boolean(
-            myPeerIdRef.current &&
-            disproved.suggesterPeerId &&
-            disproved.suggesterPeerId === myPeerIdRef.current
-          );
-          if (isSuggester) {
-            setDisprovedCardReveal(disproved);
-            sounds.playCardSlide();
-          } else {
-            setDisprovedCardReveal(null);
-          }
-        } else {
-          setDisprovedCardReveal(null);
+      // Only update confidential disproved card reveal when a new payload is actively provided or in state
+      const targetDisproved = disproved || newState.lastDisprovedCardForSuggester;
+      if (targetDisproved) {
+        // Strictly only reveal confidential disproved card to the suggester who initiated the suggestion!
+        const isSuggester = Boolean(
+          myPeerIdRef.current &&
+          targetDisproved.suggesterPeerId &&
+          targetDisproved.suggesterPeerId === myPeerIdRef.current
+        );
+        if (isSuggester) {
+          setDisprovedCardReveal(targetDisproved);
+          sounds.playCardSlide();
         }
       }
 
-      if (accusation !== undefined) {
-        if (accusation) {
-          // Strictly only reveal accusation envelope inspection to the accuser or if crime was solved (correct)!
-          const isAccuser = Boolean(
-            myPeerIdRef.current &&
-            accusation.accuserPeerId &&
-            accusation.accuserPeerId === myPeerIdRef.current
-          );
-          if (accusation.isCorrect || isAccuser) {
-            setAccusationReveal(accusation);
-            if (accusation.isCorrect) {
-              sounds.playVictoryFanfare();
-            } else {
-              sounds.playGavelBang();
-            }
-          } else {
-            setAccusationReveal(null);
-          }
+      // Update accusation reveal so all detectives can glance at the accused cards
+      const targetAccusation = accusation || newState.lastAccusationResult;
+      if (targetAccusation) {
+        setAccusationReveal(targetAccusation);
+        if (targetAccusation.isCorrect) {
+          sounds.playVictoryFanfare();
         } else {
-          setAccusationReveal(null);
+          sounds.playGavelBang();
         }
       }
 
@@ -247,14 +226,14 @@ export function useCluedoGame() {
             applyStateUpdate(
               personalState,
               null,
-              payload.accusationResult?.isCorrect ? payload.accusationResult : null
+              payload.accusationResult || null
             );
             return;
           } else if (!maskedStateRef.current) {
             applyStateUpdate(
               payload.state,
               null,
-              payload.accusationResult?.isCorrect ? payload.accusationResult : null
+              payload.accusationResult || null
             );
             return;
           }

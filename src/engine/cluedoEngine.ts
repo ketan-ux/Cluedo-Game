@@ -614,15 +614,21 @@ export function maskStateForPeer(masterState: GameState, recipientPeerId: string
   const solution = shouldRevealEnvelope ? masterState.envelope : null;
 
   // Accusation result:
-  // Strictly confidential: ONLY the accuser receives an incorrect accusation result.
-  // Other players NEVER receive an incorrect accusation result under any circumstance.
-  // If and only if the accusation was correct (solving the crime), it is public.
+  // The accusation declaration itself (the 3 accused cards and accuser) is public to all detectives!
+  // The secret murder envelope contents (if incorrect) is confidential to the accuser only.
   let lastAccusationResult: AccusationResultPayload | null = null;
   if (masterState.lastAccusationResult) {
-    if (masterState.lastAccusationResult.isCorrect) {
+    const isAccuser = masterState.lastAccusationResult.accuserPeerId === recipientPeerId;
+    if (masterState.lastAccusationResult.isCorrect || isAccuser) {
       lastAccusationResult = masterState.lastAccusationResult;
-    } else if (masterState.lastAccusationResult.accuserPeerId === recipientPeerId) {
-      lastAccusationResult = masterState.lastAccusationResult;
+    } else {
+      lastAccusationResult = {
+        accuserPeerId: masterState.lastAccusationResult.accuserPeerId,
+        accuserName: masterState.lastAccusationResult.accuserName,
+        accuserCharacter: masterState.lastAccusationResult.accuserCharacter,
+        isCorrect: false,
+        accusation: masterState.lastAccusationResult.accusation,
+      };
     }
   }
 

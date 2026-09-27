@@ -103,7 +103,7 @@ export interface AccusationResultPayload {
     weapon: Weapon;
     room: Room;
   };
-  envelope: Envelope;
+  envelope?: Envelope;
 }
 
 export interface GameLogEntry {

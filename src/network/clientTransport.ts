@@ -1,4 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
+import { firestoreRelay } from './firestoreRelay';
 
 /**
  * Universal High-Reliability Multi-Player Transport for Global Seamless Play
@@ -92,6 +93,15 @@ class ClientTransport {
       } catch (err) {
         console.warn('[Transport] PeerJS initialization error:', err);
       }
+    }
+
+    // 6. Setup Cloud Firestore Real-Time Relay (Guaranteed cross-network synchronization)
+    try {
+      firestoreRelay.startRoomSync(this.roomCode, this.peerId, (packet) => {
+        this.handleIncoming(packet);
+      });
+    } catch (err) {
+      console.warn('[Transport] Firestore relay initialization error:', err);
     }
 
     console.log(`[Transport] Globally connected to room ${this.roomCode} as ${this.peerId} (Host: ${isHost})`);
@@ -297,23 +307,8 @@ class ClientTransport {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:global.stun.twilio.com:3478' },
-            { urls: 'stun:openrelay.metered.ca:80' },
-            {
-              urls: 'turn:openrelay.metered.ca:80',
-              username: 'openrelayproject',
-              credential: 'openrelayproject',
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject',
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-              username: 'openrelayproject',
-              credential: 'openrelayproject',
-            },
           ],
         },
       });
@@ -461,7 +456,14 @@ class ClientTransport {
       });
     }
 
-    // 4. Send via direct WebRTC DataChannel if connected
+    // 4. Send via Cloud Firestore real-time relay for reliable cross-network delivery
+    try {
+      firestoreRelay.sendPacket(packet);
+    } catch {
+      // ignore
+    }
+
+    // 5. Send via direct WebRTC DataChannel if connected
     if (this.isHost) {
       for (const [peerKey, conn] of this.guestConnections.entries()) {
         if (conn.open) {
@@ -538,6 +540,13 @@ class ClientTransport {
       }),
     }).catch(() => {});
 
+    // Also route through Cloud Firestore real-time relay for reliable targeted delivery
+    try {
+      firestoreRelay.sendPacket(packet);
+    } catch {
+      // ignore
+    }
+
     // Direct WebRTC: Strictly deliver only to the targeted peer to avoid leaking confidential packets
     if (this.isHost) {
       const targetConn = this.targetPeerConnections.get(targetPeerId);
@@ -587,6 +596,12 @@ class ClientTransport {
 
   disconnect() {
     this.isConnected = false;
+
+    try {
+      firestoreRelay.stopRoomSync();
+    } catch {
+      // noop
+    }
 
     this.cleanupWs();
 

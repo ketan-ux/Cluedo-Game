@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "InvestigationRoom": {
+      "title": "InvestigationRoom",
+      "description": "Authoritative game room synchronization document for a Cluedo investigation session.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Unique 6-character uppercase room code"
+        },
+        "hostPeerId": {
+          "type": "string",
+          "description": "Unique peer ID of the detective who opened the manor room"
+        },
+        "phase": {
+          "type": "string",
+          "description": "Current phase of the match: LOBBY, ROLL, MOVE, SUGGEST, DISPROVE, ACCUSE, or GAME_OVER"
+        },
+        "stateJson": {
+          "type": "string",
+          "description": "Serialized authoritative masked game state"
+        },
+        "lastActivity": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds of the last room action"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds of the last state update"
+        }
+      },
+      "required": ["roomCode", "hostPeerId", "phase", "stateJson", "lastActivity", "updatedAt"]
+    },
+    "RoomPacket": {
+      "title": "RoomPacket",
+      "description": "Real-time communication message or targeted event exchanged between detectives in an investigation room.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique packet ID"
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Room code"
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Peer ID of the sending detective"
+        },
+        "targetPeerId": {
+          "type": "string",
+          "description": "Optional targeted peer ID for confidential messages (e.g. disproved card or private hand)"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of event: JOIN_REQUEST, JOIN_ACCEPTED, SYNC_REQUEST, SYNC_STATE, PLAYER_STATE, PLAYER_ACTION"
+        },
+        "payload": {
+          "type": "string",
+          "description": "Serialized JSON string payload"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds"
+        }
+      },
+      "required": ["id", "roomCode", "senderId", "type", "payload", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomCode}": {
+      "schema": {
+        "$ref": "#/entities/InvestigationRoom"
+      },
+      "description": "Stores the active game room state and metadata."
+    },
+    "/rooms/{roomCode}/packets/{packetId}": {
+      "schema": {
+        "$ref": "#/entities/RoomPacket"
+      },
+      "description": "Real-time messaging subcollection for low-latency cross-network communication between detectives."
+    }
+  }
+}

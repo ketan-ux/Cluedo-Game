@@ -493,9 +493,21 @@ export class HostController {
       this.masterState.players[this.masterState.pendingDisproverIndex]?.isAi;
 
     if (isAiTurn || isAiDisprove) {
+      // Natural, thoughtful board-game pacing so detectives can clearly glance at cards and clues
+      let delay = 2200;
+      if (this.masterState.phase === 'DISPROVE') {
+        delay = 2600;
+      } else if (this.masterState.phase === 'SUGGEST') {
+        delay = 2800;
+      } else if (this.masterState.phase === 'ACCUSE') {
+        delay = 3800;
+      } else if (this.masterState.phase === 'ROLL') {
+        delay = 2000;
+      }
+
       this.aiTimer = setTimeout(() => {
         this.executeAiStep();
-      }, 900);
+      }, delay);
     }
   }
 
@@ -593,10 +605,21 @@ export class HostController {
       !!accusationResult &&
       (accusationResult.isCorrect || isHostAccuser);
 
+    const hostAccusation = accusationResult
+      ? {
+          accuserPeerId: accusationResult.accuserPeerId,
+          accuserName: accusationResult.accuserName,
+          accuserCharacter: accusationResult.accuserCharacter,
+          isCorrect: accusationResult.isCorrect,
+          accusation: accusationResult.accusation,
+          envelope: canHostInspectEnvelope ? accusationResult.envelope : undefined,
+        }
+      : null;
+
     this.onStateUpdated(
       hostMasked,
       isHostSuggester ? disprovedCard : null,
-      canHostInspectEnvelope ? accusationResult : null
+      hostAccusation
     );
 
     // 2. Compact public spectator state (all hands stripped, solution hidden, logs limited to last 12)
@@ -607,11 +630,21 @@ export class HostController {
 
     // 3. Single Unified Broadcast packet: NEVER include handsMap, disprovedCard, or secret envelope
     // This broadcasts public game board state (positions, phase, active player, logs) to all connected clients.
+    const publicAccusation = accusationResult
+      ? {
+          accuserPeerId: accusationResult.accuserPeerId,
+          accuserName: accusationResult.accuserName,
+          accuserCharacter: accusationResult.accuserCharacter,
+          isCorrect: accusationResult.isCorrect,
+          accusation: accusationResult.accusation,
+          envelope: accusationResult.isCorrect ? accusationResult.envelope : undefined,
+        }
+      : null;
+
     clientTransport.send({
       type: 'SYNC_STATE',
       state: spectatorState,
-      // If accusation was correct, game is won and solution is public. Otherwise null.
-      accusationResult: accusationResult?.isCorrect ? accusationResult : null,
+      accusationResult: publicAccusation,
       syncTimestamp: Date.now(),
     });
 
@@ -628,12 +661,23 @@ export class HostController {
         !!accusationResult &&
         (accusationResult.isCorrect || isAccuser);
 
+      const playerAccusation = accusationResult
+        ? {
+            accuserPeerId: accusationResult.accuserPeerId,
+            accuserName: accusationResult.accuserName,
+            accuserCharacter: accusationResult.accuserCharacter,
+            isCorrect: accusationResult.isCorrect,
+            accusation: accusationResult.accusation,
+            envelope: canInspectEnvelope ? accusationResult.envelope : undefined,
+          }
+        : null;
+
       clientTransport.sendDirect(player.peerId, {
         type: 'PLAYER_STATE',
         targetPeerId: player.peerId,
         state: playerMasked,
         disprovedCard: isSuggester ? disprovedCard : null,
-        accusationResult: canInspectEnvelope ? accusationResult : null,
+        accusationResult: playerAccusation,
         syncTimestamp: Date.now(),
       });
     }
