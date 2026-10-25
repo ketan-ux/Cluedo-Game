@@ -1,0 +1,50 @@
+# Cluedo
+
+A private online game of Cluedo for friends, played in the browser on phones and desktops.
+
+- **Classic rules, strictly enforced:** 2 dice, exact-count movement, seating order from Miss Scarlet, one suggestion per room entry, summoned players may suggest without moving, compulsory disproving, wrong accusers keep showing cards.
+- **Real card privacy:** the whole game lives on a server you control (a Cloudflare Durable Object). Each player's browser only ever receives that player's own cards and the cards shown to them.
+- **Rejoin anytime:** reload or come back later on the same device and you get your seat back. If someone drops out, the game waits for them, then shows a card or skips their turn for them so nobody is stuck.
+- **Computer players** that deduce from what they are shown, if you're short of people.
+
+## Playing
+
+1. Open the site, enter your name, pick a suspect and press **Create room**.
+2. Press **Invite** to share the link (or read out the 5-letter code).
+3. Friends open the link, enter a name and join. The host can add bots to empty seats.
+4. The host presses **Seal the envelope & start**.
+
+## Development
+
+```bash
+bun install        # or npm install
+npm run dev        # site on http://localhost:5173, room server on :8787
+npm test           # rules engine and room server tests
+npm run lint       # type-check site and server
+```
+
+## Deploying
+
+The repository deploys as a single Cloudflare Worker named `cluedo-game`, which serves the site and runs the rooms.
+
+**Cloudflare (Workers Builds):** with the repository connected, every push to the production branch deploys. In the Worker's **Settings > Build** the commands should be:
+
+- Build command: `npm run build` (optional: `wrangler.jsonc` also builds the site before deploying)
+- Deploy command: `npx wrangler deploy`
+
+**By hand:** `npx wrangler login`, then `npm run deploy`.
+
+The free Workers plan is plenty: an idle room costs nothing, and a game night uses a few thousand of the 100,000 daily requests.
+
+**Vercel (optional):** to host the site on Vercel instead, import the repository there and set the environment variable `VITE_ROOM_SERVER_URL` to your Worker's address, for example `https://cluedo-game.<your-subdomain>.workers.dev`. Rooms still run on Cloudflare.
+
+## Layout
+
+```
+src/game/     rules engine, board, bots and per-player views (shared by site and server)
+src/net/      WebSocket client and React hook
+src/components/  screens, board and dialogs
+worker/       Cloudflare Worker entry and the GameRoom Durable Object
+```
+
+See [docs/architecture.md](docs/architecture.md) for how it fits together.

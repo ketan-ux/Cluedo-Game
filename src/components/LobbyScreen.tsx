@@ -1,521 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import {
-  ALL_SUSPECTS,
-  MaskedGameState,
-  MaskedPlayer,
-  SUSPECT_COLORS,
-  SUSPECT_STARTING_POSITIONS,
-  Suspect,
-} from '../types/cluedo';
-import { CHARACTER_DETAILS } from '../engine/assets';
-import {
-  Copy,
-  Check,
-  Bot,
-  Play,
-  UserPlus,
-  Users,
-  Shield,
-  Sparkles,
-  ArrowRight,
-  BookOpen,
-  Trash2,
-  LogOut,
-} from 'lucide-react';
-import { sounds } from '../utils/audio';
-import { ActiveSession } from '../utils/gameCache';
-import { getShareableInviteUrl } from '../network/peerProtocol';
+import React, { useState } from 'react';
+import { Bot, Check, Copy, LogOut, Play, Share2, UserMinus, Users, Wifi, WifiOff } from 'lucide-react';
+import { MIN_PLAYERS, SUSPECT_COLORS, SUSPECTS } from '../game/constants';
+import { SUSPECT_LORE } from '../game/lore';
+import { AnyAction, RoomView } from '../game/protocol';
+import { Button } from './ui/Modal';
 
-interface LobbyScreenProps {
-  gameState: MaskedGameState | null;
-  isHost: boolean;
-  myPeerId: string;
-  roomCode: string;
-  cachedSession?: ActiveSession | null;
-  onResumeSession?: () => void;
-  onDiscardSession?: () => void;
-  onLeaveLobby?: () => void;
-  onCreateRoom: (character: Suspect, name: string) => void;
-  onJoinRoom: (code: string, character: Suspect, name: string) => void;
-  onSelectCharacter: (char: Suspect) => void;
-  onAddBot: (char: Suspect) => void;
-  onRemovePlayer: (peerId: string) => void;
-  onStartMatch: () => void;
-  onOpenNotebook?: () => void;
+interface LobbyProps {
+  room: RoomView;
+  act: (action: AnyAction) => void;
+  onLeave: () => void;
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({
-  gameState,
-  isHost,
-  myPeerId,
-  roomCode,
-  cachedSession,
-  onResumeSession,
-  onDiscardSession,
-  onLeaveLobby,
-  onCreateRoom,
-  onJoinRoom,
-  onSelectCharacter,
-  onAddBot,
-  onRemovePlayer,
-  onStartMatch,
-}) => {
-  const [tab, setTab] = useState<'HOST' | 'JOIN'>('HOST');
-  const [playerName, setPlayerName] = useState<string>('Detective Holmes');
-  const [joinCodeInput, setJoinCodeInput] = useState<string>('');
-  const [selectedCharacter, setSelectedCharacter] = useState<Suspect>('Miss Scarlet');
-  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+export function LobbyScreen({ room, act, onLeave }: LobbyProps) {
+  const [copied, setCopied] = useState(false);
+  const isHost = room.hostId === room.youId;
+  const me = room.members.find((m) => m.id === room.youId);
+  const invite = `${window.location.origin}/?join=${room.code}`;
+  const canStart = room.members.length >= MIN_PLAYERS;
 
-  // Check URL query parameters for ?join=CODE or ?room=CODE or ?code=CODE
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const joinParam = urlParams.get('join') || urlParams.get('room') || urlParams.get('code');
-    if (joinParam) {
-      setJoinCodeInput(joinParam.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6));
-      setTab('JOIN');
+  const share = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Cluedo', text: `Join my Cluedo game. Room code ${room.code}`, url: invite });
+        return;
+      } catch {
+        // Fall back to copying.
+      }
     }
-  }, []);
-
-  const handleCopyInvite = () => {
-    sounds.playPencilMark();
-    const inviteUrl = getShareableInviteUrl(roomCode);
-    navigator.clipboard.writeText(inviteUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+    await navigator.clipboard?.writeText(invite);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  // If already in a lobby session:
-  if (gameState && gameState.phase === 'LOBBY') {
-    const joinedCharacters = new Set(gameState.players.map((p) => p.character));
-    const availableCharacters = ALL_SUSPECTS.filter((s) => !joinedCharacters.has(s));
-    const canStart = isHost && gameState.players.length >= 2;
-
-    return (
-      <div
-        id="lobby-active-screen"
-        className="relative w-full max-w-5xl xl:max-w-6xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-8 lg:p-10 shadow-2xl flex flex-col space-y-6 animate-fade-in"
-      >
-        {/* Header with Room Code & Invite Link */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-[#d4af37]/30 pb-6">
+  return (
+    <div className="min-h-[100dvh] w-full flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div className="w-full max-w-5xl rounded-3xl mahogany-panel border-2 border-[#d4af37] p-4 sm:p-8 shadow-2xl space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#d4af37]/30 pb-5">
           <div>
-            <div className="flex items-center space-x-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-deco uppercase tracking-[0.2em] text-[#d4af37] font-bold">
-                Server-Authoritative Match Lobby • Real-Time Sync
-              </span>
-            </div>
-            <h2 className="font-deco font-black text-2xl sm:text-3xl text-[#f4e4bc] mt-1 tracking-wider">
-              BODDY MANOR INVESTIGATION
-            </h2>
-            <p className="text-xs text-[#baa479] font-serif-vintage italic">
-              Assemble the detectives to open the case file and seal the Murder Envelope.
+            <h1 className="font-deco font-black text-2xl sm:text-3xl text-[#f4e4bc] tracking-wider">The guests are arriving</h1>
+            <p className="text-sm text-[#baa479] font-serif-vintage italic">
+              Share the code with your friends. {isHost ? 'Start when everyone is seated.' : 'The host will start the game.'}
             </p>
           </div>
-
-          {/* Room Code Badge */}
-          <div className="flex items-center space-x-3 bg-[#1a0f0d] border-2 border-[#d4af37] rounded-xl px-5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.6)]">
-            <div className="text-right">
-              <span className="text-[10px] font-deco text-[#baa479] block uppercase tracking-widest">Room Code</span>
-              <span className="font-mono font-black text-2xl text-[#d4af37] tracking-widest">
-                {roomCode}
-              </span>
+          <div className="flex items-center gap-2 bg-[#1a0f0d] border-2 border-[#d4af37] rounded-xl px-4 py-2.5">
+            <div>
+              <div className="text-[10px] font-deco text-[#baa479] uppercase tracking-widest">Room code</div>
+              <div id="room-code-display" className="font-mono font-black text-2xl text-[#d4af37] tracking-[0.3em]">
+                {room.code}
+              </div>
             </div>
-
             <button
-              id="copy-invite-btn"
-              onClick={handleCopyInvite}
-              className="p-2.5 rounded-lg bg-[#251610] hover:bg-[#3d2013] text-[#d4af37] border border-[#d4af37]/40 flex items-center space-x-1.5 transition-all cursor-pointer shadow"
-              title="Copy Direct Join Link"
+              type="button"
+              onClick={share}
+              className="ml-2 p-2.5 rounded-lg bg-[#251610] text-[#d4af37] border border-[#d4af37]/40 flex items-center gap-1.5 text-xs font-bold"
             >
-              {copiedLink ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-mono text-emerald-400 font-bold">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span className="text-xs font-deco tracking-wider font-bold">Copy Link</span>
-                </>
-              )}
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : 'share' in navigator ? <Share2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copied ? 'Copied' : 'Invite'}</span>
             </button>
-
-            {onLeaveLobby && (
-              <button
-                id="leave-lobby-btn"
-                type="button"
-                onClick={onLeaveLobby}
-                className="p-2.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-700/50 flex items-center space-x-1.5 transition-all cursor-pointer shadow"
-                title="Leave this Lobby"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="text-xs font-deco tracking-wider font-bold">Exit</span>
-              </button>
-            )}
           </div>
-        </div>
+        </header>
 
-        {/* 6 Suspect Slots Grid */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-deco font-bold text-base text-[#f4e4bc] flex items-center space-x-2 tracking-wide">
-              <Users className="w-4 h-4 text-[#d4af37]" />
-              <span>Suspect Registry ({gameState.players.length} / 6 Assembled)</span>
-            </h3>
-            <span className="text-xs font-serif-vintage italic text-[#baa479]">
-              Requires 2–6 detectives to initiate case
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {ALL_SUSPECTS.map((suspect) => {
-              const player = gameState.players.find((p) => p.character === suspect);
-              const isMe = player?.peerId === myPeerId;
-              const color = SUSPECT_COLORS[suspect];
-
-              if (player) {
-                return (
-                  <div
-                    key={suspect}
-                    className={`p-4 rounded-xl border-2 flex items-center justify-between transition-all ${
-                      isMe
-                        ? 'bg-[#251610] border-[#d4af37] shadow-[0_0_15px_rgba(212,175,55,0.25)] ring-2 ring-[#d4af37]/50'
-                        : 'bg-[#1a0f0d] border-[#d4af37]/20'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div
-                        className="w-10 h-10 rounded-full border-2 border-[#d4af37] flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0"
-                        style={{ backgroundColor: color.hex }}
-                      >
-                        {suspect.charAt(0)}
+        <section>
+          <h2 className="font-deco font-bold text-[#f4e4bc] flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-[#d4af37]" /> Seats ({room.members.length} / 6)
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {SUSPECTS.map((s) => {
+              const m = room.members.find((x) => x.suspect === s);
+              const mine = m?.id === room.youId;
+              return (
+                <div
+                  key={s}
+                  className={`p-3 rounded-xl border-2 flex items-center justify-between gap-2 ${
+                    mine ? 'bg-[#251610] border-[#d4af37] ring-2 ring-[#d4af37]/40' : m ? 'bg-[#1a0f0d] border-[#d4af37]/25' : 'border-dashed border-[#d4af37]/30 bg-[#1a0f0d]/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={`w-10 h-10 rounded-full shrink-0 border-2 border-[#d4af37] ${m ? '' : 'opacity-40'}`}
+                      style={{ backgroundColor: SUSPECT_COLORS[s] }}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm truncate">{m ? (mine ? `${m.name} (you)` : m.name) : 'Empty seat'}</span>
+                        {m?.isHost && <span className="px-1.5 rounded bg-[#d4af37]/20 text-[9px] font-mono text-[#d4af37]">HOST</span>}
+                        {m?.isBot && <span className="px-1.5 rounded bg-[#9b111e]/25 text-[9px] font-mono text-red-200">BOT</span>}
+                        {m && !m.isBot && (m.connected ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-red-400" />)}
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="font-bold text-sm text-[#f4e4bc] truncate">
-                            {player.name}
-                          </span>
-                          {player.isHost && (
-                            <span className="px-1.5 py-0.5 rounded bg-[#d4af37]/20 text-[9px] font-mono text-[#d4af37] border border-[#d4af37]/40">
-                              HOST
-                            </span>
-                          )}
-                          {player.isAi && (
-                            <span className="px-1.5 py-0.5 rounded bg-[#9b111e]/20 text-[9px] font-mono text-red-300 border border-[#9b111e]/40">
-                              BOT
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-[#baa479] truncate font-serif-vintage italic">{suspect}</p>
-                      </div>
+                      <p className="text-xs text-[#baa479] truncate font-serif-vintage italic">
+                        {s} · {SUSPECT_LORE[s].title}
+                      </p>
                     </div>
-
-                    {isHost && !player.isHost && (
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    {!m && me && (
                       <button
-                        onClick={() => onRemovePlayer(player.peerId)}
-                        className="text-xs text-red-400 hover:text-red-300 hover:underline font-mono px-2 py-1"
+                        type="button"
+                        onClick={() => act({ type: 'pickSuspect', suspect: s })}
+                        className="px-2.5 py-1.5 rounded bg-[#251610] text-[#f4e4bc] border border-[#d4af37]/40 text-[11px] font-deco uppercase"
                       >
-                        Kick
+                        Sit here
+                      </button>
+                    )}
+                    {!m && isHost && (
+                      <button
+                        type="button"
+                        onClick={() => act({ type: 'addBot', suspect: s })}
+                        className="px-2.5 py-1.5 rounded bg-[#251610] text-[#d4af37] border border-[#d4af37]/30 text-[11px] font-deco uppercase flex items-center gap-1"
+                      >
+                        <Bot className="w-3.5 h-3.5" /> Add bot
+                      </button>
+                    )}
+                    {m && isHost && !mine && (
+                      <button
+                        type="button"
+                        onClick={() => act({ type: 'remove', memberId: m.id })}
+                        className="p-2 rounded text-red-300 hover:bg-red-950/50"
+                        aria-label={`Remove ${m.name}`}
+                      >
+                        <UserMinus className="w-4 h-4" />
                       </button>
                     )}
                   </div>
-                );
-              }
-
-              // Empty Slot
-              return (
-                <div
-                  key={suspect}
-                  className="p-4 rounded-xl border border-dashed border-[#d4af37]/30 bg-[#1a0f0d]/50 flex items-center justify-between"
-                >
-                  <div className="flex items-center space-x-3 opacity-60">
-                    <div
-                      className="w-10 h-10 rounded-full border border-[#d4af37]/30 flex items-center justify-center text-white/50 text-xs font-mono"
-                      style={{ backgroundColor: `${color.hex}33` }}
-                    >
-                      {suspect.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-xs text-[#baa479]">{suspect}</p>
-                      <p className="text-[10px] text-[#8a6e4d] italic">Unclaimed</p>
-                    </div>
-                  </div>
-
-                  {isHost && (
-                    <button
-                      type="button"
-                      onClick={() => onAddBot(suspect)}
-                      className="px-2.5 py-1.5 rounded bg-[#251610] hover:bg-[#3d2013] text-[#d4af37] border border-[#d4af37]/30 text-xs font-deco uppercase tracking-wider flex items-center space-x-1 transition-colors cursor-pointer"
-                    >
-                      <Bot className="w-3.5 h-3.5" />
-                      <span>Add Bot</span>
-                    </button>
-                  )}
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
 
-        {/* Start Game Footer Banner */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[#d4af37]/30 pt-6">
-          <div className="text-xs font-serif-vintage text-[#baa479]">
-            {isHost ? (
-              canStart ? (
-                <span className="text-[#d4af37] font-bold">
-                  ✓ Ready to begin! Click Start Match to deal cards.
-                </span>
-              ) : (
-                <span className="text-amber-400">
-                  Add at least 1 more player or AI bot to begin.
-                </span>
-              )
-            ) : (
-              <span className="italic">Waiting for the Host to start the investigation...</span>
-            )}
-          </div>
-
-          {isHost && (
-            <button
-              id="start-match-btn"
-              disabled={!canStart}
-              onClick={onStartMatch}
-              className={`px-8 py-3.5 rounded font-deco font-bold text-xs uppercase tracking-widest flex items-center space-x-2 transition-all ${
-                canStart
-                  ? 'bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/30 cursor-pointer animate-pulse-glow'
-                  : 'bg-[#251610] text-[#5c3e29] border border-[#3b2012] cursor-not-allowed'
-              }`}
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Seal Envelope & Start Match</span>
-            </button>
+        <footer className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-[#d4af37]/30 pt-5">
+          <Button variant="secondary" onClick={onLeave}>
+            <LogOut className="w-4 h-4" /> Leave
+          </Button>
+          {isHost ? (
+            <Button id="start-game" disabled={!canStart} onClick={() => act({ type: 'start' })} className="py-3.5 sm:px-8">
+              <Play className="w-4 h-4" /> {canStart ? 'Seal the envelope & start' : 'Need at least 2 players (bots count)'}
+            </Button>
+          ) : (
+            <span className="text-sm text-[#baa479] italic text-center">Waiting for the host to start…</span>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  // Pre-game Setup Screen (Create or Join)
-  return (
-    <div
-      id="lobby-setup-screen"
-      className="relative w-full max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto rounded-3xl mahogany-panel border-2 border-[#d4af37] p-6 sm:p-8 lg:p-10 shadow-2xl flex flex-col space-y-6 animate-fade-in"
-    >
-      {/* Title & Introduction */}
-      <div className="text-center space-y-2 border-b border-[#d4af37]/30 pb-5">
-        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-[#1a0f0d] border border-[#d4af37]/50 text-xs font-deco tracking-widest uppercase text-[#d4af37] mb-1">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Worldwide Multiplayer • Real-Time Cross-Network Sync</span>
-        </div>
-        <h1 className="font-deco font-black text-3xl sm:text-4xl lg:text-5xl text-[#f4e4bc] tracking-wider uppercase">
-          CLUEDO: BODDY MANOR
-        </h1>
-        <p className="text-xs sm:text-sm font-serif-vintage italic text-[#e6c88b] max-w-xl mx-auto">
-          Six prominent guests. Nine lavish rooms. Six deadly weapons. One murder. Unravel the crime before your fellow detectives.
-        </p>
-      </div>
-
-      {/* Desktop 2-Panel Layout: Personas on Left, Room Controls on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-        {/* Left: Persona Selection (7 cols on lg) */}
-        <div className="lg:col-span-7 space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-              Choose Your Detective Persona
-            </label>
-            <span className="text-[11px] font-serif-vintage italic text-[#baa479]">
-              Selected: <strong className="text-[#f4e4bc] not-italic">{selectedCharacter}</strong>
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {ALL_SUSPECTS.map((suspect) => {
-              const isSelected = selectedCharacter === suspect;
-              const color = SUSPECT_COLORS[suspect];
-              const detail = CHARACTER_DETAILS[suspect];
-
-              return (
-                <button
-                  key={suspect}
-                  type="button"
-                  onClick={() => setSelectedCharacter(suspect)}
-                  className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#251610] border-[#d4af37] ring-2 ring-[#d4af37]/70 shadow-[0_0_16px_rgba(212,175,55,0.3)] scale-[1.02]'
-                      : 'bg-[#1a0f0d] border-[#d4af37]/20 hover:border-[#d4af37]/60 hover:bg-[#20130f]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5 mb-1.5">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-deco font-bold text-xs shadow-md flex-shrink-0"
-                      style={{ backgroundColor: color.hex }}
-                    >
-                      {suspect.charAt(0)}
-                    </div>
-                    <div className="min-w-0">
-                      <span className="font-deco font-bold text-xs text-[#f4e4bc] block truncate">
-                        {suspect}
-                      </span>
-                      <span className="text-[9px] font-mono text-[#d4af37] block truncate">
-                        Start: {SUSPECT_STARTING_POSITIONS[suspect].x},{SUSPECT_STARTING_POSITIONS[suspect].y}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] font-serif-vintage italic text-[#baa479] line-clamp-2 leading-relaxed">
-                    {detail.title}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: Hosting & Joining Control Panel (5 cols on lg) */}
-        <div className="lg:col-span-5 flex flex-col space-y-4 bg-[#1a0f0d] p-5 sm:p-6 rounded-2xl border border-[#d4af37]/40 shadow-xl">
-          {/* Active Session Cache Recovery Prompt (Vercel & Tab-reload protection) */}
-          {cachedSession && onResumeSession && (
-            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37] shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
-              <div className="min-w-0 pr-2">
-                <div className="flex items-center space-x-2 text-xs font-deco font-bold text-[#d4af37]">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                  <span className="truncate">Saved Case: Room #{cachedSession.roomCode}</span>
-                </div>
-                <p className="text-[11px] font-mono text-[#baa479] truncate mt-0.5">
-                  Role: {cachedSession.isHost ? 'Host' : 'Guest'} • {cachedSession.playerName} ({cachedSession.character})
-                </p>
-              </div>
-              <div className="flex items-center space-x-2 flex-shrink-0">
-                <button
-                  id="resume-cached-case-btn"
-                  type="button"
-                  onClick={onResumeSession}
-                  className="px-3 py-1.5 rounded-lg bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] font-deco font-bold text-xs uppercase tracking-wider transition-all hover:scale-105 active:scale-95 shadow cursor-pointer whitespace-nowrap"
-                >
-                  {cachedSession.isHost ? 'Resume Match' : 'Rejoin Room'}
-                </button>
-                {onDiscardSession && (
-                  <button
-                    id="discard-cached-case-btn"
-                    type="button"
-                    onClick={onDiscardSession}
-                    className="p-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-700/50 transition-all cursor-pointer shadow"
-                    title="Discard saved case and start fresh"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Host / Join Tabs */}
-          <div className="flex rounded-xl bg-[#0d0705] p-1 border border-[#d4af37]/30">
-            <button
-              type="button"
-              onClick={() => setTab('HOST')}
-              className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                tab === 'HOST'
-                  ? 'bg-[#d4af37] text-[#1a0f0d] shadow-md'
-                  : 'text-[#baa479] hover:text-[#f4e4bc]'
-              }`}
-            >
-              Host Match
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('JOIN')}
-              className={`flex-1 py-2.5 rounded-lg font-deco font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                tab === 'JOIN'
-                  ? 'bg-[#d4af37] text-[#1a0f0d] shadow-md'
-                  : 'text-[#baa479] hover:text-[#f4e4bc]'
-              }`}
-            >
-              Join Room
-            </button>
-          </div>
-
-          {/* Name Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-              Detective Pseudonym / Name
-            </label>
-            <input
-              id="player-name-input"
-              type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="e.g. Detective Holmes"
-              maxLength={20}
-              className="w-full px-4 py-2.5 bg-[#251610] border border-[#d4af37]/40 rounded-xl text-sm text-[#f4e4bc] focus:outline-none focus:border-[#d4af37]"
-            />
-          </div>
-
-          {/* Join Code Input (if joining) */}
-          {tab === 'JOIN' && (
-            <div className="space-y-1.5">
-              {joinCodeInput && (
-                <div className="p-2.5 rounded-xl bg-[#251610] border border-[#d4af37]/50 flex items-center justify-between text-xs font-mono text-[#f4e4bc] animate-fade-in">
-                  <span className="flex items-center space-x-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Invited to: <strong className="text-[#d4af37] font-bold">{joinCodeInput}</strong></span>
-                  </span>
-                  <span className="text-[10px] text-[#baa479] font-serif-vintage italic">Link Loaded</span>
-                </div>
-              )}
-              <label className="text-xs font-deco uppercase tracking-wider text-[#d4af37] font-bold">
-                6-Character Room Code
-              </label>
-              <input
-                id="join-code-input"
-                type="text"
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase().slice(0, 6))}
-                placeholder="e.g. 9X2YAB"
-                maxLength={6}
-                className="w-full px-4 py-2.5 bg-[#251610] border border-[#d4af37]/40 rounded-xl font-mono text-lg font-bold text-[#d4af37] tracking-widest focus:outline-none focus:border-[#d4af37]"
-              />
-            </div>
-          )}
-
-          {/* Case Info Box */}
-          <div className="p-3 rounded-xl bg-[#251610]/60 border border-[#d4af37]/20 text-[11px] font-serif-vintage text-[#baa479] space-y-1">
-            <div className="flex items-center justify-between text-xs font-deco text-[#d4af37] uppercase">
-              <span>Investigation File</span>
-              <span>1926 Case #42</span>
-            </div>
-            <p className="italic">
-              Multiplayer synchronization works across tabs, devices, and networks without requiring a custom server backend.
-            </p>
-          </div>
-
-          {/* Submit Button */}
-          <div className="pt-2">
-            {tab === 'HOST' ? (
-              <button
-                id="create-room-btn"
-                type="button"
-                disabled={!playerName.trim()}
-                onClick={() => onCreateRoom(selectedCharacter, playerName.trim())}
-                className="w-full py-3.5 rounded-xl font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/30 flex items-center justify-center space-x-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Open Investigation Room</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                id="join-room-btn"
-                type="button"
-                disabled={!playerName.trim() || joinCodeInput.length < 4}
-                onClick={() => onJoinRoom(joinCodeInput, selectedCharacter, playerName.trim())}
-                className="w-full py-3.5 rounded-xl font-deco font-bold text-xs uppercase tracking-widest bg-[#d4af37] hover:bg-[#b8952e] text-[#1a0f0d] shadow-xl shadow-[#d4af37]/30 flex items-center justify-center space-x-2 transition-all cursor-pointer transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Connect to Match</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
+        </footer>
       </div>
     </div>
   );
-};
+}
