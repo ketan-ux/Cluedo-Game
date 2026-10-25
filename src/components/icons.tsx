@@ -41,25 +41,6 @@ const WEAPON_PATHS: Record<Weapon, React.ReactNode> = {
   ),
 };
 
-export function WeaponIcon({ weapon, className, size = 24 }: { weapon: Weapon; className?: string; size?: number }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      {WEAPON_PATHS[weapon]}
-    </svg>
-  );
-}
-
 /** For use inside another SVG, positioned in that SVG's units. */
 export function WeaponGlyph({ weapon, x, y, size }: { weapon: Weapon; x: number; y: number; size: number }) {
   return (

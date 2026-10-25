@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, BookOpen, LogOut, Square as SquareIcon, WifiOff } from 'lucide-react';
 import { CardName } from '../game/constants';
 import { Envelope, GameEvent } from '../game/engine';
 import { AnyAction, RoomView } from '../game/protocol';
 import { EventBatch } from '../net/useRoom';
 import { sounds } from '../utils/audio';
+import { haptics } from '../utils/prefs';
 import { BoardView, useBoardMode } from './board/BoardView';
-import { DiceBadge, SuggestionBanner, Toast, Toasts } from './game/Overlays';
-import { ActionBar, PlayersStrip, SidePanel } from './game/Panels';
-import { DetectiveNotebook } from './ui/DetectiveNotebook';
+import { BottomNav, SettingsSheet, Tab, TopBar } from './game/Chrome';
+import { DiceBadge, SuggestionBanner, Toast, Toasts, TurnBanner } from './game/Overlays';
+import { ActionBar, CaseLog, Chat, PlayersStrip, SidePanel, useUnread } from './game/Panels';
+import { DetectiveNotes, useNotebook } from './ui/DetectiveNotebook';
 import {
   AccusationModal,
   AccusationResultModal,
@@ -18,7 +19,9 @@ import {
   SuggestionModal,
   UnrefutedModal,
 } from './ui/GameDialogs';
-import { HandTray } from './ui/HandTray';
+import { CaseFile, HandFan } from './ui/HandTray';
+import { Modal } from './ui/Modal';
+import { RulesSheet } from './ui/RulesSheet';
 
 interface GameScreenProps {
   room: RoomView;
@@ -40,7 +43,7 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
   const isHost = room.hostId === myId;
   const name = useCallback((id: string) => game.players.find((p) => p.id === id)?.name ?? 'Someone', [game.players]);
 
-  const [notebook, setNotebook] = useState(false);
+  const [sheet, setSheet] = useState<Tab | 'settings' | 'rules' | null>(null);
   const [accusing, setAccusing] = useState<Partial<Envelope> | null>(null);
   const [suggestDismissed, setSuggestDismissed] = useState<number | null>(null);
   const [popups, setPopups] = useState<Popup[]>([]);
@@ -90,7 +93,7 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
         case 'turn':
           if (e.playerId === myId) {
             sounds.playDoorCreak();
-            toast('Your turn!');
+            haptics.buzz([40, 60, 40]);
           }
           break;
         case 'rolled':
@@ -150,98 +153,117 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
   const showSuggestModal = !!options.suggestIn && suggestDismissed !== game.turn.number;
 
   const hand = me?.hand ?? [];
-  const handTray = <HandTray hand={hand} onOpenNotebook={() => setNotebook(true)} />;
+  const mustShow = options.show.length > 0 && !!suggestion;
+  const unread = useUnread(room.chat.length, sheet === 'chat');
+  const notebook = useNotebook(room.code, myId ?? 'spectator');
+
+  // A buzz when someone is waiting on you to show a card.
+  useEffect(() => {
+    if (mustShow) haptics.buzz(90);
+  }, [mustShow, suggestion?.turn]);
+
+  const notes = me && myId && (
+    <DetectiveNotes notebook={notebook} myId={myId} hand={hand} seen={me.seen} players={game.players} compact />
+  );
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-[#0d0705] text-[#f4ecd8] overflow-hidden">
-      <header className="h-11 shrink-0 px-3 flex items-center justify-between gap-2 border-b border-[#3d2315] bg-[#1a0e08]">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-deco font-black tracking-widest text-[#d4af37]">CLUEDO</span>
-          <span className="text-[11px] font-mono text-[#baa479] truncate">Room {room.code}</span>
-          {!connected && (
-            <span className="flex items-center gap-1 text-[11px] text-red-300">
-              <WifiOff className="w-3.5 h-3.5" /> Reconnecting…
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setBoardMode(boardMode === '3d' ? '2d' : '3d')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#2b170e] border border-[#d4af37]/40 text-[11px] font-bold"
-            aria-label={boardMode === '3d' ? 'Switch to the flat 2D board' : 'Switch to the 3D board'}
-          >
-            {boardMode === '3d' ? <SquareIcon className="w-3.5 h-3.5 text-[#d4af37]" /> : <Box className="w-3.5 h-3.5 text-[#d4af37]" />}
-            {boardMode === '3d' ? '2D' : '3D'}
-          </button>
-          <button
-            onClick={() => setNotebook(true)}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2b170e] border border-[#d4af37]/60 text-xs font-bold"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-[#d4af37]" /> Notebook
-          </button>
-          <button
-            onClick={() => {
-              if (window.confirm('Leave this game? Your seat stays, and you can rejoin from the home screen.')) onLeave();
-            }}
-            className="p-2 rounded-lg text-red-200 hover:bg-red-950/60"
-            aria-label="Leave game"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+    <div className="game-grid text-[var(--parchment)]">
+      <TopBar
+        code={room.code}
+        connected={connected}
+        boardMode={boardMode}
+        onToggleBoard={() => setBoardMode(boardMode === '3d' ? '2d' : '3d')}
+        onNotes={() => setSheet('notes')}
+        onSettings={() => setSheet('settings')}
+      />
 
-      <PlayersStrip room={room} />
+      <div className="ga-players">
+        <PlayersStrip room={room} />
+      </div>
 
       {room.away && (
-        <AwayBanner name={name(room.away.memberId)} deadline={room.away.deadline} stage={game.turn.stage} />
+        <div className="ga-away">
+          <AwayBanner name={name(room.away.memberId)} deadline={room.away.deadline} stage={game.turn.stage} />
+        </div>
       )}
 
-      <main className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2 p-2 overflow-y-auto lg:overflow-hidden">
-        <aside className="hidden lg:flex w-72 xl:w-80 shrink-0 flex-col gap-2 overflow-y-auto">{handTray}</aside>
+      {notes && <aside className="ga-notes flex-col overflow-y-auto p-2 pr-0">{notes}</aside>}
 
-        <section className="flex flex-col gap-2 shrink-0 lg:shrink lg:min-h-0 lg:flex-1 items-center">
-          <div className="relative w-full aspect-[248/258] max-h-[52dvh] lg:max-h-none lg:aspect-auto lg:flex-1 lg:min-h-0">
-            <BoardView
-              mode={boardMode}
-              onUnsupported={() => setBoardMode('2d')}
-              game={game}
-              myId={myId}
-              batch={batch}
-              selected={selected}
-              onPick={pick}
-              onPassage={() => act({ type: 'passage' })}
-            />
-            <SuggestionBanner suggestion={suggestion} players={game.players} />
-            {boardMode === '2d' && <DiceBadge roll={game.turn.roll} rolling={rolling} />}
-          </div>
-          <div className="w-full lg:max-w-3xl">
-            <ActionBar
-              room={room}
-              selected={selected}
-              onMove={move}
-              onClearSelection={() => setSelected(null)}
-              onRoll={() => act({ type: 'roll' })}
-              onPassage={() => act({ type: 'passage' })}
-              onSuggest={() => setSuggestDismissed(null)}
-              onAccuse={() => setAccusing({})}
-              onEndTurn={() => act({ type: 'endTurn' })}
-              onNotebook={() => setNotebook(true)}
-            />
-          </div>
-        </section>
+      <section className="ga-board px-1.5 sm:px-2">
+        <div className="relative w-full h-full rounded-2xl overflow-hidden felt shadow-[inset_0_0_40px_rgba(0,0,0,0.6)]">
+          <BoardView
+            mode={boardMode}
+            onUnsupported={() => setBoardMode('2d')}
+            game={game}
+            myId={myId}
+            batch={batch}
+            selected={selected}
+            onPick={pick}
+            onPassage={() => act({ type: 'passage' })}
+          />
+          <SuggestionBanner suggestion={suggestion} players={game.players} />
+          {boardMode === '2d' && <DiceBadge roll={game.turn.roll} rolling={rolling} />}
+          <TurnBanner game={game} youId={myId} />
+          <Toasts toasts={toasts} />
+        </div>
+      </section>
 
-        <aside className="flex-1 min-h-[14rem] lg:flex-none lg:w-96 lg:min-h-0">
-          <div className="h-full lg:hidden">
-            <SidePanel room={room} onChat={(text) => act({ type: 'chat', text })} hand={handTray} />
-          </div>
-          <div className="h-full hidden lg:block">
-            <SidePanel room={room} onChat={(text) => act({ type: 'chat', text })} />
-          </div>
-        </aside>
-      </main>
+      <div className="ga-dock px-1.5 sm:px-2 pt-1.5 pb-1.5">
+        <div className="max-w-3xl mx-auto">
+          <ActionBar
+            room={room}
+            selected={selected}
+            onMove={move}
+            onClearSelection={() => setSelected(null)}
+            onRoll={() => act({ type: 'roll' })}
+            onPassage={() => act({ type: 'passage' })}
+            onSuggest={() => setSuggestDismissed(null)}
+            onAccuse={() => setAccusing({})}
+            onEndTurn={() => act({ type: 'endTurn' })}
+          />
+        </div>
+      </div>
 
-      <Toasts toasts={toasts} />
+      <div className="ga-hand justify-center">
+        <HandFan hand={hand} />
+      </div>
+
+      <aside className="ga-side p-2 pl-0">
+        <SidePanel room={room} onChat={(text) => act({ type: 'chat', text })} />
+      </aside>
+
+      <BottomNav onOpen={setSheet} cards={hand.length} unread={unread} alert={mustShow} />
+
+      {sheet === 'cards' && me && (
+        <Modal title="Case file" subtitle="Only you can see this." onClose={() => setSheet(null)} tall wide>
+          <CaseFile hand={hand} seen={me.seen} shown={me.shown} players={game.players} />
+        </Modal>
+      )}
+      {sheet === 'notes' && notes && (
+        <Modal title="Detective notes" onClose={() => setSheet(null)} tall wide bodyClassName="!px-2 sm:!px-4">
+          <DetectiveNotes notebook={notebook} myId={myId!} hand={hand} seen={me!.seen} players={game.players} titled={false} />
+        </Modal>
+      )}
+      {sheet === 'log' && (
+        <Modal title="Case log" onClose={() => setSheet(null)} tall wide>
+          <CaseLog game={game} />
+        </Modal>
+      )}
+      {sheet === 'chat' && (
+        <Modal title="Chat" onClose={() => setSheet(null)} tall bodyClassName="flex flex-col">
+          <Chat messages={room.chat} youId={myId} onSend={(text) => act({ type: 'chat', text })} />
+        </Modal>
+      )}
+      {sheet === 'settings' && (
+        <SettingsSheet
+          boardMode={boardMode}
+          setBoardMode={setBoardMode}
+          onRules={() => setSheet('rules')}
+          onLeave={onLeave}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'rules' && <RulesSheet onClose={() => setSheet(null)} />}
 
       {/* Showing a card is compulsory, so it comes first. */}
       {options.show.length > 0 && suggestion ? (
@@ -298,17 +320,6 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
         />
       ) : null}
 
-      {me && myId && (
-        <DetectiveNotebook
-          open={notebook}
-          onClose={() => setNotebook(false)}
-          roomCode={room.code}
-          myId={myId}
-          hand={hand}
-          seen={me.seen}
-          players={game.players}
-        />
-      )}
     </div>
   );
 }
@@ -321,7 +332,7 @@ function AwayBanner({ name, deadline, stage }: { name: string; deadline: number;
   }, []);
   const secs = Math.max(0, Math.ceil((deadline - now) / 1000));
   return (
-    <div className="px-3 py-1.5 bg-red-950/70 border-b border-red-800/60 text-xs text-red-100 text-center">
+    <div className="px-3 py-1.5 bg-red-950/80 border-y border-red-800/60 text-sm text-red-100 text-center">
       {name} has disconnected. {stage === 'disprove' ? 'A card will be shown for them' : 'Their turn will be skipped'} in {secs}s
       unless they return.
     </div>

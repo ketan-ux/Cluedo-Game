@@ -42,6 +42,9 @@ Tests cover all of this: `src/game/engine.test.ts`, plus `worker/roomCore.test.t
 | `worker/roomCore.ts` | Lobby, seats, host rights, bot pacing, away-player fallbacks (testable without Cloudflare) |
 | `worker/GameRoom.ts` | Durable Object adapter: WebSocket hibernation, storage, alarms |
 | `src/net/roomClient.ts` | Reconnecting WebSocket client |
+| `src/components/GameScreen.tsx` | The table: turns server events into animations, sounds, pop-ups and haptics |
+| `src/components/art/` | Portraits, room and weapon pictures, logo. Original SVG drawn in code |
+| `src/components/ui/DetectiveNotebook.tsx` | The notes sheet. Certain facts come from the player's own view; pencil marks stay on the device |
 
 ## Turn stages
 
@@ -69,3 +72,15 @@ The 3D board redraws only while something is moving (`frameloop="demand"`), so a
 - Game over: the envelope on the staircase opens before the result dialog appears.
 
 Everything is drawn in code, with no image files or 3D models to download: procedural canvas textures for the floors, wood and dice, lathe-turned pawns, and low-poly weapons and furniture.
+
+## The game screen
+
+`GameScreen` is one CSS grid (`.game-grid` in `src/index.css`) with three arrangements, so the same components move rather than being rendered twice:
+
+- Phone, upright: top bar, players, board, action dock, bottom nav. Cards, notes, log and chat open as bottom sheets.
+- Phone, sideways (landscape and under 540px tall): the board on the left, players, dock and nav on the right.
+- Desktop (1024px and wider): board, dock and fanned hand in the middle, log and chat on the right. From 1280px the detective notes get their own column on the left.
+
+The notebook's state lives in `useNotebook` in `GameScreen`, so the desktop column and the phone sheet edit the same marks.
+
+Only one dialog shows at a time, in a fixed order: showing a card (compulsory) first, then pop-ups in the order they arrived (a card shown to you, a wrong accusation, nobody could disprove you), then the end of the game, then your own accusation or suggestion.

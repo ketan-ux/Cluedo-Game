@@ -36,21 +36,21 @@ export const WEAPON_LORE: Record<Weapon, { material: string; description: string
   Wrench: { material: 'Cast Iron', description: 'A heavy forged spanner covered in grease and dark stains.' },
 };
 
-export const ROOM_LORE: Record<Room, { color: string; floor: string; description: string }> = {
-  Kitchen: { color: '#7a4a2a', floor: '#c9b48a', description: 'Cast iron stoves, prep counters and meat hooks.' },
-  Ballroom: { color: '#6d3b1f', floor: '#b8895a', description: 'A polished parquet dance floor under a crystal chandelier.' },
-  Conservatory: { color: '#2f5d3a', floor: '#8fae86', description: 'A glass solarium filled with exotic ferns and statues.' },
-  'Dining Room': { color: '#6b2430', floor: '#a8706b', description: 'A grand mahogany banquet table set with silver.' },
-  'Billiard Room': { color: '#1f5134', floor: '#3f7a52', description: 'Heavy green baize table with antique cue racks.' },
-  Library: { color: '#4a3266', floor: '#8a7aa0', description: 'Floor-to-ceiling tomes and rolling brass ladders.' },
-  Lounge: { color: '#7a2222', floor: '#b5726a', description: 'Plush velvet armchairs facing a roaring fireplace.' },
-  Hall: { color: '#7a5a1e', floor: '#c2a36a', description: 'A towering foyer with oil portraits and a grand clock.' },
-  Study: { color: '#2e3a4a', floor: '#7d8a99', description: 'A roll-top desk, a wall safe and a private telephone.' },
+export const ROOM_LORE: Record<Room, { color: string; floor: string; tag: string; description: string }> = {
+  Kitchen: { tag: 'Below Stairs', color: '#7a4a2a', floor: '#c9b48a', description: 'Cast iron stoves, prep counters and meat hooks.' },
+  Ballroom: { tag: 'The Grand Floor', color: '#6d3b1f', floor: '#b8895a', description: 'A polished parquet dance floor under a crystal chandelier.' },
+  Conservatory: { tag: 'Under Glass', color: '#2f5d3a', floor: '#8fae86', description: 'A glass solarium filled with exotic ferns and statues.' },
+  'Dining Room': { tag: 'Silver Service', color: '#6b2430', floor: '#a8706b', description: 'A grand mahogany banquet table set with silver.' },
+  'Billiard Room': { tag: 'Green Baize', color: '#1f5134', floor: '#3f7a52', description: 'Heavy green baize table with antique cue racks.' },
+  Library: { tag: 'Leather & Ink', color: '#4a3266', floor: '#8a7aa0', description: 'Floor-to-ceiling tomes and rolling brass ladders.' },
+  Lounge: { tag: 'By the Fire', color: '#7a2222', floor: '#b5726a', description: 'Plush velvet armchairs facing a roaring fireplace.' },
+  Hall: { tag: 'The Front Door', color: '#7a5a1e', floor: '#c2a36a', description: 'A towering foyer with oil portraits and a grand clock.' },
+  Study: { tag: 'Behind Closed Doors', color: '#2e3a4a', floor: '#7d8a99', description: 'A roll-top desk, a wall safe and a private telephone.' },
 };
 
 export function cardSubtitle(card: CardName): string {
   const kind: CardKind = cardKind(card);
   if (kind === 'suspect') return SUSPECT_LORE[card as Suspect].title;
   if (kind === 'weapon') return WEAPON_LORE[card as Weapon].material;
-  return ROOM_LORE[card as Room].description;
+  return ROOM_LORE[card as Room].tag;
 }

@@ -1,8 +1,10 @@
 // Web Audio API Synthesizer for Authentic Cluedo Sound Effects
 
+import { readLocal } from '../net/session';
+
 class SoundManager {
   private ctx: AudioContext | null = null;
-  public enabled: boolean = true;
+  public enabled: boolean = readLocal('cluedo.sound', true);
 
   private getContext(): AudioContext | null {
     if (!this.enabled) return null;

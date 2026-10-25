@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { AlertTriangle, CheckCircle2, Eye, Gavel, RotateCcw, Search, Shield, Skull, Sparkles, Trophy, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, Gavel, MailOpen, RotateCcw, Search, Shield, Skull, Sparkles, Trophy, XCircle } from 'lucide-react';
 import { CardName, Room, ROOMS, Suspect, SUSPECTS, Weapon, WEAPONS } from '../../game/constants';
 import { Envelope } from '../../game/engine';
 import { sounds } from '../../utils/audio';
+import { Portrait } from '../art/Portraits';
+import { RoomArt } from '../art/RoomArt';
 import { CardView, FlipCard } from './CardView';
 import { Button, Modal } from './Modal';
 import { CardPicker } from './Pickers';
@@ -30,7 +32,7 @@ export function SuggestionModal({
       title="Make a suggestion"
       subtitle={
         <>
-          You are in the <strong className="text-[#d4af37] not-italic">{room}</strong>. The suspect and weapon you name are brought here.
+          The suspect and weapon you name are brought into the {room}.
         </>
       }
       icon={<Sparkles className="w-5 h-5" />}
@@ -47,11 +49,20 @@ export function SuggestionModal({
         </>
       }
     >
+      <div className="relative h-20 sm:h-24 rounded-xl overflow-hidden border border-[var(--gold)]/50">
+        <RoomArt room={room} className="absolute inset-0 w-full h-full" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-transparent" />
+        <div className="absolute left-3 top-1/2 -translate-y-1/2">
+          <div className="text-[10px] font-deco font-bold uppercase tracking-[0.25em] text-[var(--gold)]">Where</div>
+          <div className="font-deco font-black text-xl text-[var(--parchment)]">The {room}</div>
+        </div>
+      </div>
       <CardPicker label="Who?" options={SUSPECTS} value={suspect} onChange={setSuspect} hand={hand} />
       <CardPicker label="With what?" options={WEAPONS} value={weapon} onChange={setWeapon} hand={hand} />
-      <p className="p-3 rounded-xl bg-[#1a0f0d] border border-[#d4af37]/40 text-center font-deco text-sm">
-        “I suggest it was <span className="text-[#d4af37]">{suspect}</span>, in the <span className="text-[#d4af37]">{room}</span>, with
-        the <span className="text-[#d4af37]">{weapon}</span>.”
+      <p className="parchment p-3 rounded-xl text-center font-serif-vintage italic text-[17px] leading-snug">
+        “I suggest it was <strong className="not-italic font-deco text-[var(--crimson)]">{suspect}</strong>, in the{' '}
+        <strong className="not-italic font-deco text-[var(--crimson)]">{room}</strong>, with the{' '}
+        <strong className="not-italic font-deco text-[var(--crimson)]">{weapon}</strong>.”
       </p>
     </Modal>
   );
@@ -71,7 +82,42 @@ export function AccusationModal({
   const [suspect, setSuspect] = useState<Suspect>(() => firstNotIn(SUSPECTS, hand, initial?.suspect));
   const [weapon, setWeapon] = useState<Weapon>(() => firstNotIn(WEAPONS, hand, initial?.weapon));
   const [room, setRoom] = useState<Room>(() => firstNotIn(ROOMS, hand, initial?.room));
+  const [sure, setSure] = useState(false);
   const holding = [suspect, weapon, room].filter((c) => hand.includes(c));
+
+  if (sure) {
+    return (
+      <Modal
+        title="Open the envelope?"
+        subtitle="There is no going back. If any card is wrong you are out of the game."
+        icon={<MailOpen className="w-5 h-5" />}
+        tone="red"
+        onClose={onClose}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSure(false)}>
+              <ArrowLeft className="w-4 h-4" /> Change
+            </Button>
+            <Button id="confirm-accusation" variant="danger" onClick={() => onAccuse({ suspect, weapon, room })}>
+              <Gavel className="w-4 h-4" /> I accuse
+            </Button>
+          </>
+        }
+      >
+        <div className="flex justify-center gap-2 sm:gap-3">
+          <CardView card={suspect} size="sm" />
+          <CardView card={weapon} size="sm" />
+          <CardView card={room} size="sm" />
+        </div>
+        <p className="parchment p-3 rounded-xl text-center font-serif-vintage italic text-[17px] leading-snug">
+          “I accuse <strong className="not-italic font-deco text-[var(--crimson)]">{suspect}</strong> of murder, in the{' '}
+          <strong className="not-italic font-deco text-[var(--crimson)]">{room}</strong>, with the{' '}
+          <strong className="not-italic font-deco text-[var(--crimson)]">{weapon}</strong>!”
+        </p>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       title="Make an accusation"
@@ -85,14 +131,14 @@ export function AccusationModal({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button id="confirm-accusation" variant="danger" onClick={() => onAccuse({ suspect, weapon, room })}>
-            Accuse
+          <Button id="accuse-next" variant="danger" onClick={() => setSure(true)}>
+            Accuse…
           </Button>
         </>
       }
     >
       {holding.length > 0 && (
-        <p className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-600/60 text-amber-200 text-xs flex items-center gap-2">
+        <p className="p-2.5 rounded-xl bg-amber-950/80 border border-amber-600/60 text-amber-100 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           You hold {holding.join(' and ')}, so this accusation cannot be right.
         </p>
@@ -250,13 +296,13 @@ export function AccusationResultModal({
       footer={<Button onClick={onClose}>Continue</Button>}
     >
       <div>
-        <h3 className="text-[11px] font-deco uppercase tracking-wider text-[#d4af37] mb-2">The accusation</h3>
+        <h3 className="text-[11px] font-deco uppercase tracking-[0.2em] text-[var(--gold)] mb-2 text-center">The accusation</h3>
         <div className="flex justify-center gap-2 sm:gap-3">
           {keys.map((k) => (
             <div key={k} className="relative">
               <CardView card={accusation[k]} size="sm" />
               {envelope && (
-                <span className="absolute -top-2 -right-2 rounded-full bg-[#251610]">
+                <span className="absolute -top-2 -right-2 rounded-full bg-[var(--mahogany)]">
                   {accusation[k] === envelope[k] ? (
                     <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                   ) : (
@@ -270,7 +316,7 @@ export function AccusationResultModal({
       </div>
       {envelope && (
         <div>
-          <h3 className="text-[11px] font-deco uppercase tracking-wider text-[#d4af37] mb-2">Inside the envelope (only you can see this)</h3>
+          <h3 className="text-[11px] font-deco uppercase tracking-[0.2em] text-[var(--gold)] mb-2 text-center">Inside the envelope (only you can see this)</h3>
           <div className="flex justify-center gap-2 sm:gap-3">
             {keys.map((k) => (
               <CardView key={k} card={envelope[k]} size="sm" />
@@ -318,13 +364,20 @@ export function GameOverModal({
               <RotateCcw className="w-4 h-4" /> Play again
             </Button>
           ) : (
-            <span className="text-xs text-[#baa479] self-center">Waiting for the host to start another game…</span>
+            <span className="text-sm italic text-[var(--muted)] self-center">Waiting for the host to start another game…</span>
           )}
         </>
       }
     >
-      <h3 className="text-center font-deco text-sm">
-        It was {envelope.suspect}, in the {envelope.room}, with the {envelope.weapon}.
+      {winnerSuspect && (
+        <div className="mx-auto w-28 rounded-[50%] overflow-hidden border-4 border-[var(--gold)] shadow-[0_0_30px_rgba(212,175,55,0.45)]">
+          <Portrait suspect={winnerSuspect} className="block w-full h-auto" />
+        </div>
+      )}
+      <h3 className="text-center font-serif-vintage italic text-[17px]">
+        It was <strong className="not-italic font-deco text-[var(--gold-light)]">{envelope.suspect}</strong>, in the{' '}
+        <strong className="not-italic font-deco text-[var(--gold-light)]">{envelope.room}</strong>, with the{' '}
+        <strong className="not-italic font-deco text-[var(--gold-light)]">{envelope.weapon}</strong>.
       </h3>
       <div className="flex justify-center gap-2 sm:gap-3">
         <FlipCard card={envelope.suspect} size="sm" delay={300} />

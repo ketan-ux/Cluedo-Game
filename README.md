@@ -7,6 +7,9 @@ A private online game of Cluedo for friends, played in the browser on phones and
 - **Rejoin anytime:** reload or come back later on the same device and you get your seat back. If someone drops out, the game waits for them, then shows a card or skips their turn for them so nobody is stuck.
 - **Computer players** that deduce from what they are shown, if you're short of people.
 - **A 3D table:** themed rooms with furniture, turned pawns, weapon miniatures, dice that tumble onto the staircase, pawns that walk their route, and an envelope that opens when the case is solved. A flat 2D board is one tap away (top bar), and is used automatically where 3D isn't supported.
+- **A tabletop look:** original illustrated suspect portraits, room and weapon cards, a box-lid title screen, a seating-plan lobby and a parchment detective notebook that fills in and locks what you know for certain.
+- **Made for phones first:** on a phone the board fills the screen, the actions sit under your thumb, and your cards, notes, case log and chat open as sheets from the bottom bar. It also works turned sideways. On a desktop the notes, board, hand and log are all on screen at once.
+- **Installable:** add it to your home screen (Safari: Share > Add to Home Screen; Chrome: Install app) and it opens full screen like an app. Sound and vibration can be switched off in Settings (the gear in the top bar).
 
 ### Board controls
 
@@ -16,10 +19,12 @@ A private online game of Cluedo for friends, played in the browser on phones and
 
 ## Playing
 
-1. Open the site, enter your name, pick a suspect and press **Create room**.
+1. Open the site, pick a suspect, enter your name and press **Create a room**.
 2. Press **Invite** to share the link (or read out the 5-letter code).
 3. Friends open the link, enter a name and join. The host can add bots to empty seats.
 4. The host presses **Seal the envelope & start**.
+
+**How to play** (on the home screen, in the lobby and in Settings) has the rules in short.
 
 ## Development
 
@@ -29,6 +34,8 @@ npm run dev        # site on http://localhost:5173, room server on :8787
 npm test           # rules engine and room server tests
 npm run lint       # type-check site and server
 ```
+
+In development, open `http://localhost:5173/?art` for a gallery of all the artwork and cards, or `?art=suggest` (also `accuse`, `disprove`, `reveal`, `over`) to see one dialog on its own.
 
 ## Deploying
 
@@ -51,6 +58,8 @@ The free Workers plan is plenty: an idle room costs nothing, and a game night us
 src/game/     rules engine, board, bots and per-player views (shared by site and server)
 src/net/      WebSocket client and React hook
 src/components/  screens, dialogs and the 2D board
+src/components/art/      portraits, room and weapon pictures, logo (all SVG drawn in code)
+src/components/game/     game screen pieces: top bar, players, action dock, log, chat
 src/components/board3d/  3D board (three.js), loaded only when a game starts
 worker/       Cloudflare Worker entry and the GameRoom Durable Object
 ```

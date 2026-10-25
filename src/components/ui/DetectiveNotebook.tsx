@@ -1,22 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Check, HelpCircle, Lock, X, XCircle } from 'lucide-react';
+import { Check, HelpCircle, Lock, Star, X } from 'lucide-react';
 import { CardName, ROOMS, SUSPECTS, WEAPONS } from '../../game/constants';
 import { SeenCard } from '../../game/engine';
 import { PublicPlayer } from '../../game/view';
 import { readLocal, writeLocal } from '../../net/session';
 import { sounds } from '../../utils/audio';
+import { Avatar } from '../art/Portraits';
 
 type Mark = '' | 'has' | 'not' | 'maybe';
-
-interface NotebookProps {
-  open: boolean;
-  onClose: () => void;
-  roomCode: string;
-  myId: string;
-  hand: CardName[];
-  seen: SeenCard[];
-  players: PublicPlayer[];
-}
 
 const NEXT: Record<Mark, Mark> = { '': 'has', has: 'not', not: 'maybe', maybe: '' };
 
@@ -26,125 +17,134 @@ const SECTIONS: Array<{ title: string; cards: readonly CardName[] }> = [
   { title: 'Where?', cards: ROOMS },
 ];
 
-function MarkIcon({ mark }: { mark: Mark }) {
-  if (mark === 'has') return <Check className="w-4 h-4 text-emerald-800 stroke-[3]" />;
-  if (mark === 'not') return <X className="w-4 h-4 text-red-800 stroke-[3]" />;
-  if (mark === 'maybe') return <HelpCircle className="w-4 h-4 text-amber-700" />;
-  return null;
-}
-
-/** A detective's scoresheet. Facts you know for certain are filled in and locked. */
-export function DetectiveNotebook({ open, onClose, roomCode, myId, hand, seen, players }: NotebookProps) {
+/** Your pencil marks and jottings for one game, kept on this device. */
+export function useNotebook(roomCode: string, myId: string) {
   const key = `cluedo.notebook.${roomCode}.${myId}`;
   const [marks, setMarks] = useState<Record<string, Mark>>(() => readLocal(key, {}));
-  const [notes, setNotes] = useState<Record<string, string>>(() => readLocal(`${key}.notes`, {}));
-
+  const [memo, setMemo] = useState<string>(() => readLocal(`${key}.memo`, ''));
   useEffect(() => {
     writeLocal(key, marks);
   }, [key, marks]);
   useEffect(() => {
-    writeLocal(`${key}.notes`, notes);
-  }, [key, notes]);
+    writeLocal(`${key}.memo`, memo);
+  }, [key, memo]);
+  return {
+    marks,
+    memo,
+    setMemo,
+    cycle(k: string) {
+      sounds.playPencilMark();
+      setMarks((m) => ({ ...m, [k]: NEXT[m[k] ?? ''] }));
+    },
+  };
+}
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+export type Notebook = ReturnType<typeof useNotebook>;
 
-  if (!open) return null;
+function MarkIcon({ mark, small }: { mark: Mark; small: boolean }) {
+  const size = small ? 'w-3.5 h-3.5' : 'w-4 h-4';
+  if (mark === 'has') return <Check className={`${size} text-emerald-800 stroke-[3.5]`} />;
+  if (mark === 'not') return <X className={`${size} text-[var(--crimson)] stroke-[3.5]`} />;
+  if (mark === 'maybe') return <HelpCircle className={`${size} text-amber-700 stroke-[2.5]`} />;
+  return null;
+}
 
+interface NotesProps {
+  notebook: Notebook;
+  myId: string;
+  hand: CardName[];
+  seen: SeenCard[];
+  players: PublicPlayer[];
+  /** Smaller boxes, for the desktop column. */
+  compact?: boolean;
+  /** Leave the heading off when the sheet around it already has one. */
+  titled?: boolean;
+}
+
+/** The detective's scoresheet. Facts you know for certain are filled in and locked. */
+export function DetectiveNotes({ notebook, myId, hand, seen, players, compact = false, titled = true }: NotesProps) {
   const known = (card: CardName, playerId: string): Mark | null => {
     if (playerId === myId) return hand.includes(card) ? 'has' : 'not';
     if (seen.some((s) => s.card === card && s.fromId === playerId)) return 'has';
     if (hand.includes(card) || seen.some((s) => s.card === card)) return 'not';
     return null;
   };
-  const markFor = (card: CardName, playerId: string): Mark => known(card, playerId) ?? marks[`${card}|${playerId}`] ?? '';
+  const markFor = (card: CardName, playerId: string): Mark => known(card, playerId) ?? notebook.marks[`${card}|${playerId}`] ?? '';
   const cleared = (card: CardName) => players.some((p) => markFor(card, p.id) === 'has');
-
-  const cycle = (card: CardName, playerId: string) => {
-    if (known(card, playerId)) return;
-    sounds.playPencilMark();
-    const k = `${card}|${playerId}`;
-    setMarks((m) => ({ ...m, [k]: NEXT[m[k] ?? ''] }));
-  };
+  const box = compact ? 'w-6 h-6' : 'w-8 h-8';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 sm:p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label="Detective notebook"
-        onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-4xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-xl overflow-hidden shadow-2xl border-4 border-[#5a381e] parchment-texture text-[#2b1f17]"
-      >
-        <header className="bg-[#24130b] text-[#f4ecd8] px-4 py-3 border-b-2 border-[#d4af37] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <BookOpen className="w-5 h-5 text-[#d4af37]" />
-            <div>
-              <h2 className="font-deco font-bold tracking-wider text-[#fff4d1]">Detective Notebook</h2>
-              <p className="text-[11px] text-[#baa479]">Tap a box: ✓ has it · ✗ doesn't · ? maybe. Locked boxes are certain.</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#3a2012]" aria-label="Close notebook">
-            <XCircle className="w-6 h-6" />
-          </button>
-        </header>
-
-        <div className="flex-1 overflow-auto p-2 sm:p-4 space-y-4 font-typewriter">
-          {SECTIONS.map((section) => (
-            <table key={section.title} className="w-full border-collapse text-xs bg-[#faf6eb]/80 rounded-lg overflow-hidden">
-              <thead>
-                <tr className="bg-[#4a2e18] text-[#f4ecd8]">
-                  <th className="sticky left-0 bg-[#4a2e18] p-2 text-left font-deco text-sm min-w-[8.5rem]">{section.title}</th>
-                  {players.map((p) => (
-                    <th key={p.id} className="p-1.5 font-normal min-w-[3.25rem]">
-                      <div className="truncate max-w-[4.5rem] mx-auto font-bold">{p.id === myId ? 'You' : p.name}</div>
-                    </th>
-                  ))}
-                  <th className="p-2 text-left font-normal min-w-[8rem]">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {section.cards.map((card) => (
-                  <tr key={card} className="border-b border-[#c8b38b]/60">
-                    <td className={`sticky left-0 bg-[#f3ead4] p-2 font-semibold ${cleared(card) ? 'line-through opacity-50' : ''}`}>
-                      {card}
-                    </td>
-                    {players.map((p) => {
-                      const locked = known(card, p.id) !== null;
-                      return (
-                        <td key={p.id} className="p-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() => cycle(card, p.id)}
-                            className={`relative w-8 h-8 mx-auto border rounded flex items-center justify-center ${
-                              locked ? 'bg-[#e9dcc0] border-[#8a6e4d]/30' : 'bg-[#fffdf7] border-[#8a6e4d]/50 hover:bg-[#f3e6c4]'
-                            }`}
-                            aria-label={`${card}, ${p.name}`}
-                          >
-                            <MarkIcon mark={markFor(card, p.id)} />
-                            {locked && <Lock className="absolute -top-1 -right-1 w-2.5 h-2.5 text-[#8a6e4d]" />}
-                          </button>
-                        </td>
-                      );
-                    })}
-                    <td className="p-1">
-                      <input
-                        value={notes[card] ?? ''}
-                        onChange={(e) => setNotes((n) => ({ ...n, [card]: e.target.value }))}
-                        placeholder="…"
-                        className="w-full px-2 py-1 bg-transparent border-b border-dashed border-[#8a6e4d]/40 focus:outline-none focus:border-[#4a2e18]"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ))}
-        </div>
+    <div className="parchment rounded-xl shadow-inner font-typewriter text-[#2d1b10] p-2 sm:p-3 space-y-3">
+      <div className="text-center">
+        {titled && <div className="font-deco font-black tracking-[0.3em] text-[var(--crimson)] text-sm">DETECTIVE NOTES</div>}
+        <div className="text-[11px] font-serif-vintage italic text-[#6b4b33]">Tap a box: ✓ has it · ✗ hasn’t · ? maybe. Locked boxes are certain.</div>
       </div>
+      {SECTIONS.map((section) => {
+        const open = section.cards.filter((c) => !cleared(c));
+        const solved = open.length === 1 ? open[0] : null;
+        return (
+          <table key={section.title} className="w-full border-collapse table-fixed">
+            <colgroup>
+              <col />
+              {players.map((p) => (
+                <col key={p.id} className={compact ? 'w-7' : 'w-10'} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr className="border-b-2 border-[#2d1b10]">
+                <th className="text-left font-deco font-black text-[13px] tracking-[0.2em] pb-1 pl-1">{section.title.toUpperCase()}</th>
+                {players.map((p) => (
+                  <th key={p.id} className="pb-1 px-0.5 font-normal" title={p.id === myId ? 'You' : p.name}>
+                    <Avatar suspect={p.suspect} size={compact ? 20 : 26} className="mx-auto block" />
+                    <span className="sr-only">{p.id === myId ? 'You' : p.name}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {section.cards.map((card) => (
+                <tr key={card} className={`border-b border-[#8a6e4d]/35 ${solved === card ? 'bg-[var(--gold)]/35' : ''}`}>
+                  <td className={`pl-1 pr-1 ${compact ? 'text-[12px]' : 'text-[14px]'} leading-tight ${cleared(card) ? 'line-through decoration-2 decoration-[#7a5a3a] opacity-50' : 'font-bold'}`}>
+                    <span className="flex items-center gap-1">
+                      {solved === card && <Star className="w-3.5 h-3.5 shrink-0 fill-[var(--crimson)] text-[var(--crimson)]" aria-label="must be in the envelope" />}
+                      {card}
+                    </span>
+                  </td>
+                  {players.map((p) => {
+                    const locked = known(card, p.id) !== null;
+                    return (
+                      <td key={p.id} className="py-0.5 px-0.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => !locked && notebook.cycle(`${card}|${p.id}`)}
+                          disabled={locked}
+                          className={`relative ${box} mx-auto rounded-[4px] border flex items-center justify-center ${
+                            locked ? 'bg-[#d9c79e]/70 border-[#8a6e4d]/30 cursor-default' : 'bg-[#fffaf0] border-[#8a6e4d]/60 active:scale-90'
+                          }`}
+                          aria-label={`${card}, ${p.id === myId ? 'you' : p.name}: ${markFor(card, p.id) || 'blank'}`}
+                        >
+                          <MarkIcon mark={markFor(card, p.id)} small={compact} />
+                          {locked && <Lock className="absolute -top-1 -right-1 w-2.5 h-2.5 text-[#7a5a3a]" />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })}
+      <label className="block">
+        <span className="font-deco font-black text-[13px] tracking-[0.2em]">NOTES</span>
+        <textarea
+          value={notebook.memo}
+          onChange={(e) => notebook.setMemo(e.target.value)}
+          rows={compact ? 3 : 4}
+          placeholder="Who asked about what, hunches, suspicions…"
+          className="mt-1 w-full resize-y rounded-md bg-[repeating-linear-gradient(transparent_0_1.45rem,rgba(138,110,77,0.35)_1.45rem_1.5rem)] bg-transparent leading-[1.5rem] px-1 text-[14px] focus:outline-none placeholder:text-[#8a6e4d]/70"
+        />
+      </label>
     </div>
   );
 }
