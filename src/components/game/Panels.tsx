@@ -66,8 +66,9 @@ function statusLine(room: RoomView): string {
     return options.passage ? `Roll the dice, or take the secret passage to the ${options.passage}.` : 'Your turn. Roll the dice.';
   }
   if (turn.stage === 'move') {
+    const rooms = options.moves.some((m) => m.kind === 'room');
     return options.moves.length
-      ? `You rolled ${turn.roll![0] + turn.roll![1]}. Tap a glowing square, or enter a room.`
+      ? `You rolled ${turn.roll![0] + turn.roll![1]}. Tap a glowing square${rooms ? ', or enter a room' : ''}.`
       : 'You are boxed in and cannot move.';
   }
   if (turn.stage === 'suggest') return `You are in the ${options.suggestIn}. Make a suggestion?`;
