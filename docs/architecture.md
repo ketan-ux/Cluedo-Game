@@ -1,43 +1,86 @@
-# Cluedo 1920s Noir Manor: System Architecture
+# Architecture
 
 ## Overview
-A desktop-first, host-authoritative multiplayer Cluedo web application engineered with React 18, TypeScript, Tailwind CSS, and WebRTC (PeerJS) peer-to-peer networking.
-
----
-
-## 1. Host-Authoritative WebRTC Network Topology
-- **Star Topology**: The room creator's browser tab acts as the authoritative local server (`Host`).
-- **PeerJS / STUN DataChannels**: Guest players connect via human-readable room codes (e.g. `CLUE-9X2Y`) directly to the host's WebRTC peer.
-- **Master GameState**: Kept solely in the Host's memory. All user inputs (`ROLL_DICE`, `MOVE_TOKEN`, `MAKE_SUGGESTION`, `DISPROVE_CARD`, `MAKE_ACCUSATION`) are received as intent packets, validated by the headless engine, and broadcast as masked state updates.
 
 ```
-                  ┌──────────────┐
-                  │  Host Client │ (Authoritative Server)
-                  │ Master State │ [Murder Envelope + Hands]
-                  └──────┬───────┘
-                         │ WebRTC DataChannels (Encrypted P2P)
-         ┌───────────────┼───────────────┐
-         ▼               ▼               ▼
-   ┌───────────┐   ┌───────────┐   ┌───────────┐
-   │  Guest 1  │   │  Guest 2  │   │  Guest 3  │
-   │MaskedState│   │MaskedState│   │MaskedState│
-   └───────────┘   └───────────┘   └───────────┘
+ browser (each player)                     Cloudflare
+ ┌──────────────────────┐   WebSocket   ┌──────────────────────────────┐
+ │ React UI             │◀────────────▶│ Worker (worker/index.ts)     │
+ │ useRoom / RoomClient │  own view     │   POST /api/rooms  new code  │
+ └──────────────────────┘  only         │   /api/rooms/:code/ws  ──┐   │
+                                        │   everything else: site  │   │
+                                        │                          ▼   │
+                                        │ GameRoom Durable Object      │
+                                        │   one per room code          │
+                                        │   full state: envelope,      │
+                                        │   every hand, bots, timers   │
+                                        └──────────────────────────────┘
 ```
 
----
+The full game state exists in exactly one place, the room's Durable Object. Players send intents (`roll`, `move`, `suggest`, `show`, `accuse`, `endTurn`). The server validates each one against the rules, applies it, and sends every connected player a view built for them alone (`viewFor` in `src/game/view.ts`).
 
-## 2. Anti-Cheat State Masking Policy
-To prevent memory inspection or network sniffing cheats:
-1. **Murder Envelope Isolation**: `envelope` (`{ suspect, weapon, room }`) is stripped from all packets sent to guest clients.
-2. **Opponent Hand Masking**: Opponents' `hand: Card[]` arrays are masked to `cardCount: number`. Only the recipient's own cards are sent in plain form.
-3. **Disprove Card Privacy**: When a player disproves a suggestion, the selected card is transferred in a private point-to-point packet from the disprover to the host, and forwarded only to the suggester. Other players receive only a public receipt stating `"[Player X] showed 1 card to [Player Y]"`.
+## Privacy
 
----
+- A player's view contains their own hand, the cards shown to them, the cards they showed, and the options open to them. Everyone else appears only as a card count.
+- When a card is shown, the card goes only to the suggester and the disprover. Everyone else gets an event saying "A showed B a card".
+- After a wrong accusation, only the accuser sees the envelope. Everyone sees it once the game is over.
+- Seats are claimed with a random token issued by the server and kept in the browser's storage, never by name.
+- Bots decide from their own view (`chooseBotAction(viewFor(state, botId))`), so they cannot peek either.
 
-## 3. Authentic Waddingtons & Parker Brothers Rule Enforcement
-- **Starting Order**: Miss Scarlet always moves first; play advances strictly clockwise.
-- **Board Movement**: 24x25 grid with orthogonal hallway movement. No diagonal moves or stepping over/onto occupied tiles.
-- **Doorway Mechanics**: Entering a room through an authentic doorway tile immediately consumes 1 step and terminates the player's movement phase for that turn.
-- **Secret Passages**: Direct shortcuts connecting **Kitchen <-> Study** and **Lounge <-> Conservatory** (can be taken in lieu of rolling dice).
-- **Suggestion Cycle**: Player must be in a room to make a suggestion for that specific room. The suspect pawn and weapon token are teleported into the room. Disproving queries players clockwise starting to the suggester's left. The first player with matching cards must reveal exactly one card.
-- **Accusations**: Made at any point during a player's turn. An exact match wins the match immediately; an incorrect accusation permanently eliminates the player from taking turns while keeping them in the game to disprove others.
+Tests cover all of this: `src/game/engine.test.ts`, plus `worker/roomCore.test.ts`, which plays a whole game and inspects every message each player would receive.
+
+## Code map
+
+| Path | What it does |
+| --- | --- |
+| `src/game/board.ts` | The classic 24 x 25 board as a text map, 17 doors, start squares |
+| `src/game/movement.ts` | Legal destinations for a roll (exact count, rooms with any count, no revisits) |
+| `src/game/engine.ts` | Turn stages, suggestions, disproving, accusations. Pure functions, no I/O |
+| `src/game/view.ts` | Per-player projection of the state and events |
+| `src/game/bot.ts` | Deduction grid and computer player |
+| `src/game/protocol.ts` | Messages between browser and server |
+| `worker/roomCore.ts` | Lobby, seats, host rights, bot pacing, away-player fallbacks (testable without Cloudflare) |
+| `worker/GameRoom.ts` | Durable Object adapter: WebSocket hibernation, storage, alarms |
+| `src/net/roomClient.ts` | Reconnecting WebSocket client |
+| `src/components/GameScreen.tsx` | The table: turns server events into animations, sounds, pop-ups and haptics |
+| `src/components/art/` | Portraits, room and weapon pictures, logo. Original SVG drawn in code |
+| `src/components/ui/DetectiveNotebook.tsx` | The notes sheet. Certain facts come from the player's own view; pencil marks stay on the device |
+
+## Turn stages
+
+`roll` → (`move` → `suggest` | `end`) → `disprove` → `end`. The next turn starts when the player ends their turn, or straight away after a wrong accusation. `optionsFor(state, playerId)` is the single source of truth for what a player may do. The server validates against it and the UI draws its buttons from it.
+
+## Timers
+
+Durable Object alarms drive bot moves (one to two and a half seconds of "thinking" per step, so the animations can finish) and the away-player fallback: a disconnected disprover has a card shown for them after 45 s, and a disconnected active player has their turn skipped after 90 s. Rooms delete themselves after 7 days without activity.
+
+## The board
+
+`src/components/board/BoardView.tsx` chooses between two boards that share one interface (`BoardProps`):
+
+- `board3d/Board3D.tsx`, built with React Three Fiber, downloads separately when a game starts. While it loads, and wherever WebGL is unavailable or the 3D board fails, the 2D board is shown instead.
+- `board/Board2D.tsx` is an SVG drawn from the same map.
+
+Both boards take their geometry from `board/layout.ts` (walls, doors, room label and token positions), so the two always agree.
+
+The 3D board redraws only while something is moving (`frameloop="demand"`), so an idle board uses no battery. Animations are driven by server events rather than timers:
+
+- `moved` (walk): the pawn hops square by square along the path the server sent.
+- `moved` (summoned) and `weaponMoved`: the piece flies in an arc into the room.
+- `moved` (passage): the pawn sinks through the floor and rises in the other room.
+- `rolled`: the dice tumble and land showing the faces the server rolled. Move highlights appear once they settle.
+- Game over: the envelope on the staircase opens before the result dialog appears.
+
+Everything is drawn in code, with no image files or 3D models to download: procedural canvas textures for the floors, wood and dice, lathe-turned pawns, and low-poly weapons and furniture.
+
+## The game screen
+
+`GameScreen` is one CSS grid (`.game-grid` in `src/index.css`) with three arrangements, so the same components move rather than being rendered twice:
+
+- Phone, upright: top bar, players, board, action dock, bottom nav. Cards, notes, log and chat open as bottom sheets.
+- Phone, sideways (landscape and under 540px tall): the board on the left, players, dock and nav on the right.
+- Desktop (1024px and wider): board, dock and fanned hand in the middle, log and chat on the right. From 1280px the detective notes get their own column on the left.
+
+The notebook's state lives in `useNotebook` in `GameScreen`, so the desktop column and the phone sheet edit the same marks.
+
+Only one dialog shows at a time, in a fixed order: showing a card (compulsory) first, then pop-ups in the order they arrived (a card shown to you, a wrong accusation, nobody could disprove you), then the end of the game, then your own accusation or suggestion.

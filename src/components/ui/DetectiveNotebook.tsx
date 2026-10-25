@@ -1,419 +1,150 @@
-import React, { useState, useEffect } from 'react';
-import { Card, MaskedPlayer, ALL_SUSPECTS, ALL_WEAPONS, ALL_ROOMS } from '../../types/cluedo';
-import { BookOpen, Check, X, HelpCircle, XCircle, FileText, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, HelpCircle, Lock, Star, X } from 'lucide-react';
+import { CardName, ROOMS, SUSPECTS, WEAPONS } from '../../game/constants';
+import { SeenCard } from '../../game/engine';
+import { PublicPlayer } from '../../game/view';
+import { readLocal, writeLocal } from '../../net/session';
 import { sounds } from '../../utils/audio';
-import { gameCache } from '../../utils/gameCache';
+import { Avatar } from '../art/Portraits';
 
-interface DetectiveNotebookProps {
-  isOpen: boolean;
-  onClose: () => void;
-  myHand: Card[];
-  players: MaskedPlayer[];
-  myPeerId?: string;
-  roomCode?: string;
+type Mark = '' | 'has' | 'not' | 'maybe';
+
+const NEXT: Record<Mark, Mark> = { '': 'has', has: 'not', not: 'maybe', maybe: '' };
+
+const SECTIONS: Array<{ title: string; cards: readonly CardName[] }> = [
+  { title: 'Who?', cards: SUSPECTS },
+  { title: 'What?', cards: WEAPONS },
+  { title: 'Where?', cards: ROOMS },
+];
+
+/** Your pencil marks and jottings for one game, kept on this device. */
+export function useNotebook(roomCode: string, myId: string) {
+  const key = `cluedo.notebook.${roomCode}.${myId}`;
+  const [marks, setMarks] = useState<Record<string, Mark>>(() => readLocal(key, {}));
+  const [memo, setMemo] = useState<string>(() => readLocal(`${key}.memo`, ''));
+  useEffect(() => {
+    writeLocal(key, marks);
+  }, [key, marks]);
+  useEffect(() => {
+    writeLocal(`${key}.memo`, memo);
+  }, [key, memo]);
+  return {
+    marks,
+    memo,
+    setMemo,
+    cycle(k: string) {
+      sounds.playPencilMark();
+      setMarks((m) => ({ ...m, [k]: NEXT[m[k] ?? ''] }));
+    },
+  };
 }
 
-type CheckState = 'BLANK' | 'CHECK' | 'CROSS' | 'QUESTION';
+export type Notebook = ReturnType<typeof useNotebook>;
 
-export const DetectiveNotebook: React.FC<DetectiveNotebookProps> = ({
-  isOpen,
-  onClose,
-  myHand,
-  players,
-  myPeerId,
-  roomCode,
-}) => {
-  // Grid state: Record<cardName, Record<playerPeerId, CheckState>>
-  const [marks, setMarks] = useState<Record<string, Record<string, CheckState>>>(() => {
-    if (roomCode && myPeerId) {
-      const cached = gameCache.getNotebook(roomCode, myPeerId);
-      if (cached?.marks) return cached.marks;
-    }
-    return {};
-  });
+function MarkIcon({ mark, small }: { mark: Mark; small: boolean }) {
+  const size = small ? 'w-3.5 h-3.5' : 'w-4 h-4';
+  if (mark === 'has') return <Check className={`${size} text-emerald-800 stroke-[3.5]`} />;
+  if (mark === 'not') return <X className={`${size} text-[var(--crimson)] stroke-[3.5]`} />;
+  if (mark === 'maybe') return <HelpCircle className={`${size} text-amber-700 stroke-[2.5]`} />;
+  return null;
+}
 
-  const [customNotes, setCustomNotes] = useState<Record<string, string>>(() => {
-    if (roomCode && myPeerId) {
-      const cached = gameCache.getNotebook(roomCode, myPeerId);
-      if (cached?.notes) return cached.notes;
-    }
-    return {};
-  });
+interface NotesProps {
+  notebook: Notebook;
+  myId: string;
+  hand: CardName[];
+  seen: SeenCard[];
+  players: PublicPlayer[];
+  /** Smaller boxes, for the desktop column. */
+  compact?: boolean;
+  /** Leave the heading off when the sheet around it already has one. */
+  titled?: boolean;
+}
 
-  const [activeTab, setActiveTab] = useState<'ALL' | 'SUSPECTS' | 'WEAPONS' | 'ROOMS'>('ALL');
-
-  // Save changes to cache whenever marks or customNotes update
-  useEffect(() => {
-    if (roomCode && myPeerId) {
-      gameCache.saveNotebook(roomCode, myPeerId, marks, customNotes);
-    }
-  }, [marks, customNotes, roomCode, myPeerId]);
-
-  // Find local player ID with strict priority: exact peerId match first, then single player with non-empty hand
-  const localPlayer =
-    (myPeerId && players.find((p) => p.peerId === myPeerId)) ||
-    players.find((p) => Array.isArray(p.hand) && p.hand.length > 0 && p.hand === myHand) ||
-    (players.length === 1 ? players[0] : undefined);
-
-  const localPlayerId = localPlayer?.peerId;
-  const handCardNames = myHand.map((c) => c.name).join(',');
-
-  // Pre-populate player's starting hand with checks in their own column
-  useEffect(() => {
-    if (!localPlayerId) return;
-    setMarks((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const card of myHand) {
-        if (!next[card.name]) {
-          next[card.name] = {};
-        }
-        if (next[card.name][localPlayerId] !== 'CHECK') {
-          next[card.name] = { ...next[card.name], [localPlayerId]: 'CHECK' };
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [handCardNames, localPlayerId]);
-
-  // Keyboard shortcut Tab or N to toggle
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'n' || e.key === 'N') {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-        e.preventDefault();
-        if (isOpen) onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  const cycleState = (cardName: string, colId: string) => {
-    sounds.playPencilMark();
-    setMarks((prev) => {
-      const current = prev[cardName]?.[colId] || 'BLANK';
-      let nextState: CheckState = 'BLANK';
-      if (current === 'BLANK') nextState = 'CHECK';
-      else if (current === 'CHECK') nextState = 'CROSS';
-      else if (current === 'CROSS') nextState = 'QUESTION';
-      else if (current === 'QUESTION') nextState = 'BLANK';
-
-      return {
-        ...prev,
-        [cardName]: {
-          ...(prev[cardName] || {}),
-          [colId]: nextState,
-        },
-      };
-    });
+/** The detective's scoresheet. Facts you know for certain are filled in and locked. */
+export function DetectiveNotes({ notebook, myId, hand, seen, players, compact = false, titled = true }: NotesProps) {
+  const known = (card: CardName, playerId: string): Mark | null => {
+    if (playerId === myId) return hand.includes(card) ? 'has' : 'not';
+    if (seen.some((s) => s.card === card && s.fromId === playerId)) return 'has';
+    if (hand.includes(card) || seen.some((s) => s.card === card)) return 'not';
+    return null;
   };
-
-  const renderCheckIcon = (state: CheckState) => {
-    switch (state) {
-      case 'CHECK':
-        return <Check className="w-4 h-4 text-emerald-800 font-black stroke-[3]" />;
-      case 'CROSS':
-        return <X className="w-4 h-4 text-red-800 font-black stroke-[3]" />;
-      case 'QUESTION':
-        return <HelpCircle className="w-4 h-4 text-amber-800 font-bold" />;
-      default:
-        return <span className="text-transparent">-</span>;
-    }
-  };
-
-  if (!isOpen) return null;
-
-  // Generate columns directly for each player in the match: exactly ONE player gets 'isMe' and '(You)'
-  const columns = players.map((p) => {
-    const isMe = localPlayer ? p.peerId === localPlayer.peerId : Boolean(myPeerId && p.peerId === myPeerId);
-    return {
-      id: p.peerId,
-      name: p.name,
-      character: p.character,
-      isMe,
-      label: isMe ? `${p.name} (You)` : p.name,
-      subLabel: p.character,
-    };
-  });
+  const markFor = (card: CardName, playerId: string): Mark => known(card, playerId) ?? notebook.marks[`${card}|${playerId}`] ?? '';
+  const cleared = (card: CardName) => players.some((p) => markFor(card, p.id) === 'has');
+  const box = compact ? 'w-6 h-6' : 'w-8 h-8';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 animate-fade-in">
-      <div
-        id="detective-notebook-modal"
-        className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl overflow-hidden shadow-2xl border-4 border-[#5a381e] parchment-texture text-[#2b1f17]"
-      >
-        {/* Notebook Leather Header */}
-        <div className="bg-[#24130b] text-[#f4ecd8] px-6 py-3 border-b-2 border-[#d4af37] flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <BookOpen className="w-6 h-6 text-[#d4af37]" />
-            <div>
-              <h3 className="font-deco font-bold text-lg tracking-wider text-[#fff4d1]">
-                OFFICIAL DETECTIVE LEDGER
-              </h3>
-              <p className="text-xs text-[#baa479] font-mono">
-                Case #1926-CLUE • Confidential Investigation Notes (Press 'N' to close)
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              id="notebook-close-btn"
-              onClick={onClose}
-              className="p-1.5 rounded-lg bg-[#3a2012] hover:bg-[#522e1a] text-[#f4ecd8] border border-[#6b4226] transition-colors"
-            >
-              <XCircle className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Navigation & Legend */}
-        <div className="bg-[#ebd9b8] px-6 py-2 border-b border-[#c8b38b] flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-          <div className="flex space-x-1">
-            {(['ALL', 'SUSPECTS', 'WEAPONS', 'ROOMS'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 rounded font-bold transition-colors ${
-                  activeTab === tab
-                    ? 'bg-[#2b1f17] text-[#f4ecd8]'
-                    : 'bg-[#ddc8a2] hover:bg-[#cfb890] text-[#2b1f17]'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center space-x-3 text-[11px] text-[#4b3524]">
-            <span className="font-bold">Legend:</span>
-            <span className="flex items-center gap-1">
-              <Check className="w-3.5 h-3.5 text-emerald-800" /> Eliminated
-            </span>
-            <span className="flex items-center gap-1">
-              <X className="w-3.5 h-3.5 text-red-800" /> Suspect/Accused
-            </span>
-            <span className="flex items-center gap-1">
-              <HelpCircle className="w-3.5 h-3.5 text-amber-800" /> Possible
-            </span>
-          </div>
-        </div>
-
-        {/* Notebook Table Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 font-typewriter">
-          {/* 1. Suspects Section */}
-          {(activeTab === 'ALL' || activeTab === 'SUSPECTS') && (
-            <div className="border-2 border-[#b59d74] rounded-lg overflow-hidden bg-[#faf6eb]/80 shadow-sm">
-              <div className="bg-[#4a2e18] text-[#f4ecd8] px-4 py-1.5 font-deco font-bold text-sm tracking-wider flex items-center justify-between">
-                <span>I. PERSONS OF INTEREST (SUSPECTS)</span>
-                <span className="text-xs font-mono opacity-80">6 Suspects</span>
-              </div>
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
-                    <th className="p-2 pl-3 w-48">Suspect Name</th>
-                    {columns.map((col) => (
-                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
-                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
-                          <span className="truncate max-w-[80px]">{col.name}</span>
-                          {col.isMe && (
-                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
-                              You
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
-                          {col.subLabel}
-                        </div>
-                      </th>
-                    ))}
-                    <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ALL_SUSPECTS.map((suspect, idx) => (
-                    <tr
-                      key={suspect}
-                      className={`border-b border-[#c8b38b]/60 ${
-                        idx % 2 === 0 ? 'bg-transparent' : 'bg-[#f3ead4]/60'
-                      }`}
-                    >
-                      <td className="p-2 pl-3 font-semibold text-[#1a120c]">{suspect}</td>
-                      {columns.map((col) => {
-                        const state = marks[suspect]?.[col.id] || 'BLANK';
-                        return (
-                          <td
-                            key={col.id}
-                            onClick={() => cycleState(suspect, col.id)}
-                            className="p-2 text-center border-l border-[#c8b38b]/60 hover:bg-[#e4d1ab] cursor-pointer transition-colors"
-                          >
-                            <div className="w-6 h-6 mx-auto border border-[#8a6e4d]/40 rounded bg-[#fffdf7] flex items-center justify-center shadow-inner">
-                              {renderCheckIcon(state)}
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="p-1 border-l border-[#c8b38b]/60">
-                        <input
-                          type="text"
-                          placeholder="clue..."
-                          value={customNotes[suspect] || ''}
-                          onChange={(e) =>
-                            setCustomNotes({ ...customNotes, [suspect]: e.target.value })
-                          }
-                          className="w-full px-2 py-1 bg-transparent border-b border-dashed border-[#8a6e4d]/40 text-xs focus:outline-none focus:border-[#4a2e18]"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* 2. Weapons Section */}
-          {(activeTab === 'ALL' || activeTab === 'WEAPONS') && (
-            <div className="border-2 border-[#b59d74] rounded-lg overflow-hidden bg-[#faf6eb]/80 shadow-sm">
-              <div className="bg-[#4a2e18] text-[#f4ecd8] px-4 py-1.5 font-deco font-bold text-sm tracking-wider flex items-center justify-between">
-                <span>II. MURDER WEAPONS</span>
-                <span className="text-xs font-mono opacity-80">6 Weapons</span>
-              </div>
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
-                    <th className="p-2 pl-3 w-48">Weapon</th>
-                    {columns.map((col) => (
-                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
-                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
-                          <span className="truncate max-w-[80px]">{col.name}</span>
-                          {col.isMe && (
-                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
-                              You
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
-                          {col.subLabel}
-                        </div>
-                      </th>
-                    ))}
-                    <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ALL_WEAPONS.map((weapon, idx) => (
-                    <tr
-                      key={weapon}
-                      className={`border-b border-[#c8b38b]/60 ${
-                        idx % 2 === 0 ? 'bg-transparent' : 'bg-[#f3ead4]/60'
-                      }`}
-                    >
-                      <td className="p-2 pl-3 font-semibold text-[#1a120c]">{weapon}</td>
-                      {columns.map((col) => {
-                        const state = marks[weapon]?.[col.id] || 'BLANK';
-                        return (
-                          <td
-                            key={col.id}
-                            onClick={() => cycleState(weapon, col.id)}
-                            className="p-2 text-center border-l border-[#c8b38b]/60 hover:bg-[#e4d1ab] cursor-pointer transition-colors"
-                          >
-                            <div className="w-6 h-6 mx-auto border border-[#8a6e4d]/40 rounded bg-[#fffdf7] flex items-center justify-center shadow-inner">
-                              {renderCheckIcon(state)}
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="p-1 border-l border-[#c8b38b]/60">
-                        <input
-                          type="text"
-                          placeholder="clue..."
-                          value={customNotes[weapon] || ''}
-                          onChange={(e) =>
-                            setCustomNotes({ ...customNotes, [weapon]: e.target.value })
-                          }
-                          className="w-full px-2 py-1 bg-transparent border-b border-dashed border-[#8a6e4d]/40 text-xs focus:outline-none focus:border-[#4a2e18]"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* 3. Rooms Section */}
-          {(activeTab === 'ALL' || activeTab === 'ROOMS') && (
-            <div className="border-2 border-[#b59d74] rounded-lg overflow-hidden bg-[#faf6eb]/80 shadow-sm">
-              <div className="bg-[#4a2e18] text-[#f4ecd8] px-4 py-1.5 font-deco font-bold text-sm tracking-wider flex items-center justify-between">
-                <span>III. MANSION ROOMS (CRIME SCENE)</span>
-                <span className="text-xs font-mono opacity-80">9 Rooms</span>
-              </div>
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#ede1c7] border-b border-[#b59d74] text-[#422d1b] font-bold">
-                    <th className="p-2 pl-3 w-48">Room</th>
-                    {columns.map((col) => (
-                      <th key={col.id} className={`p-2 text-center border-l border-[#b59d74] min-w-[85px] ${col.isMe ? 'bg-[#e2d0ab]' : ''}`}>
-                        <div className="text-xs font-bold text-[#2b1f17] flex items-center justify-center gap-1">
-                          <span className="truncate max-w-[80px]">{col.name}</span>
-                          {col.isMe && (
-                            <span className="text-[8px] px-1 py-0.2 bg-[#4a2e18] text-[#f4ecd8] rounded font-mono">
-                              You
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[9px] text-[#6b4e33] font-serif-vintage italic truncate max-w-[80px] mx-auto font-normal">
-                          {col.subLabel}
-                        </div>
-                      </th>
-                    ))}
-                    <th className="p-2 border-l border-[#b59d74]">Deduction Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ALL_ROOMS.map((room, idx) => (
-                    <tr
-                      key={room}
-                      className={`border-b border-[#c8b38b]/60 ${
-                        idx % 2 === 0 ? 'bg-transparent' : 'bg-[#f3ead4]/60'
-                      }`}
-                    >
-                      <td className="p-2 pl-3 font-semibold text-[#1a120c]">{room}</td>
-                      {columns.map((col) => {
-                        const state = marks[room]?.[col.id] || 'BLANK';
-                        return (
-                          <td
-                            key={col.id}
-                            onClick={() => cycleState(room, col.id)}
-                            className="p-2 text-center border-l border-[#c8b38b]/60 hover:bg-[#e4d1ab] cursor-pointer transition-colors"
-                          >
-                            <div className="w-6 h-6 mx-auto border border-[#8a6e4d]/40 rounded bg-[#fffdf7] flex items-center justify-center shadow-inner">
-                              {renderCheckIcon(state)}
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="p-1 border-l border-[#c8b38b]/60">
-                        <input
-                          type="text"
-                          placeholder="clue..."
-                          value={customNotes[room] || ''}
-                          onChange={(e) =>
-                            setCustomNotes({ ...customNotes, [room]: e.target.value })
-                          }
-                          className="w-full px-2 py-1 bg-transparent border-b border-dashed border-[#8a6e4d]/40 text-xs focus:outline-none focus:border-[#4a2e18]"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+    <div className="parchment rounded-xl shadow-inner font-typewriter text-[#2d1b10] p-2 sm:p-3 space-y-3">
+      <div className="text-center">
+        {titled && <div className="font-deco font-black tracking-[0.3em] text-[var(--crimson)] text-sm">DETECTIVE NOTES</div>}
+        <div className="text-[11px] font-serif-vintage italic text-[#6b4b33]">Tap a box: ✓ has it · ✗ hasn’t · ? maybe. Locked boxes are certain.</div>
       </div>
+      {SECTIONS.map((section) => {
+        const open = section.cards.filter((c) => !cleared(c));
+        const solved = open.length === 1 ? open[0] : null;
+        return (
+          <table key={section.title} className="w-full border-collapse table-fixed">
+            <colgroup>
+              <col />
+              {players.map((p) => (
+                <col key={p.id} className={compact ? 'w-7' : 'w-10'} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr className="border-b-2 border-[#2d1b10]">
+                <th className="text-left font-deco font-black text-[13px] tracking-[0.2em] pb-1 pl-1">{section.title.toUpperCase()}</th>
+                {players.map((p) => (
+                  <th key={p.id} className="pb-1 px-0.5 font-normal" title={p.id === myId ? 'You' : p.name}>
+                    <Avatar suspect={p.suspect} size={compact ? 20 : 26} className="mx-auto block" />
+                    <span className="sr-only">{p.id === myId ? 'You' : p.name}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {section.cards.map((card) => (
+                <tr key={card} className={`border-b border-[#8a6e4d]/35 ${solved === card ? 'bg-[var(--gold)]/35' : ''}`}>
+                  <td className={`pl-1 pr-1 ${compact ? 'text-[12px]' : 'text-[14px]'} leading-tight ${cleared(card) ? 'line-through decoration-2 decoration-[#7a5a3a] opacity-50' : 'font-bold'}`}>
+                    <span className="flex items-center gap-1">
+                      {solved === card && <Star className="w-3.5 h-3.5 shrink-0 fill-[var(--crimson)] text-[var(--crimson)]" aria-label="must be in the envelope" />}
+                      {card}
+                    </span>
+                  </td>
+                  {players.map((p) => {
+                    const locked = known(card, p.id) !== null;
+                    return (
+                      <td key={p.id} className="py-0.5 px-0.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => !locked && notebook.cycle(`${card}|${p.id}`)}
+                          disabled={locked}
+                          className={`relative ${box} mx-auto rounded-[4px] border flex items-center justify-center ${
+                            locked ? 'bg-[#d9c79e]/70 border-[#8a6e4d]/30 cursor-default' : 'bg-[#fffaf0] border-[#8a6e4d]/60 active:scale-90'
+                          }`}
+                          aria-label={`${card}, ${p.id === myId ? 'you' : p.name}: ${markFor(card, p.id) || 'blank'}`}
+                        >
+                          <MarkIcon mark={markFor(card, p.id)} small={compact} />
+                          {locked && <Lock className="absolute -top-1 -right-1 w-2.5 h-2.5 text-[#7a5a3a]" />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })}
+      <label className="block">
+        <span className="font-deco font-black text-[13px] tracking-[0.2em]">NOTES</span>
+        <textarea
+          value={notebook.memo}
+          onChange={(e) => notebook.setMemo(e.target.value)}
+          rows={compact ? 3 : 4}
+          placeholder="Who asked about what, hunches, suspicions…"
+          className="mt-1 w-full resize-y rounded-md bg-[repeating-linear-gradient(transparent_0_1.45rem,rgba(138,110,77,0.35)_1.45rem_1.5rem)] bg-transparent leading-[1.5rem] px-1 text-[14px] focus:outline-none placeholder:text-[#8a6e4d]/70"
+        />
+      </label>
     </div>
   );
-};
+}

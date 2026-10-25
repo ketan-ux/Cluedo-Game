@@ -1,6 +1,0 @@
-{
-  "name": "Cluedo: 1920s Noir Manor",
-  "description": "Desktop-first multiplayer Cluedo web game with seamless global cross-network synchronization, authentic board rules, detective notebook, and 1920s Art Deco Noir aesthetic.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

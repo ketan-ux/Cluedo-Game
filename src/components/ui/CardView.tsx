@@ -1,144 +1,112 @@
-import React from 'react';
-import { Card, CardType, SUSPECT_COLORS, Suspect, Weapon, Room } from '../../types/cluedo';
-import { CHARACTER_DETAILS, WEAPON_DETAILS } from '../../engine/assets';
-import { ROOM_DEFINITIONS } from '../../engine/boardGrid';
-import { Shield, Sparkles, Flame, Eye } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CardName, cardKind, Room, Suspect, Weapon } from '../../game/constants';
+import { cardSubtitle } from '../../game/lore';
+import { Portrait } from '../art/Portraits';
+import { RoomArt } from '../art/RoomArt';
+import { WeaponArt } from '../art/WeaponArt';
 
-interface CardViewProps {
-  card: Card;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
-  isRevealed?: boolean;
-  isSelectable?: boolean;
-  isSelected?: boolean;
-  onClick?: () => void;
-  className?: string;
-}
+type Size = 'xs' | 'sm' | 'md' | 'lg';
 
-export const CardView: React.FC<CardViewProps> = ({
-  card,
-  size = 'md',
-  isRevealed = true,
-  isSelectable = false,
-  isSelected = false,
-  onClick,
-  className = '',
-}) => {
-  const sizeClasses = {
-    sm: 'w-24 h-36 text-xs',
-    md: 'w-36 h-52 text-sm',
-    lg: 'w-48 h-72 text-base',
-    xl: 'w-64 h-96 text-lg',
-  };
+const SIZES: Record<Size, string> = {
+  xs: 'w-[4.2rem] h-[6.3rem] text-[8px]',
+  sm: 'w-[5.6rem] h-[8.4rem] text-[9.5px]',
+  md: 'w-[7.4rem] h-[11.1rem] text-[11px]',
+  lg: 'w-[10.5rem] h-[15.75rem] text-[14px]',
+};
 
-  const getCategoryColor = () => {
-    if (card.type === 'SUSPECT') return '#9b111e';
-    if (card.type === 'WEAPON') return '#4a4a4a';
-    return '#5a5a40';
-  };
+const KIND = {
+  suspect: { label: 'Suspect', band: 'bg-[var(--crimson)]' },
+  weapon: { label: 'Weapon', band: 'bg-[#3d4048]' },
+  room: { label: 'Room', band: 'bg-[#2e5a3c]' },
+};
 
-  const getTypeBadge = () => {
-    if (card.type === 'SUSPECT') return { label: 'SUSPECT', bg: 'bg-[#9b111e]/15 text-[#9b111e] border-[#9b111e]/40' };
-    if (card.type === 'WEAPON') return { label: 'WEAPON', bg: 'bg-[#5c3e29]/15 text-[#5c3e29] border-[#5c3e29]/40' };
-    return { label: 'ROOM', bg: 'bg-[#2e4a36]/15 text-[#2e4a36] border-[#2e4a36]/40' };
-  };
-
-  const badge = getTypeBadge();
-
-  if (!isRevealed) {
-    return (
-      <div
-        id={`card-hidden-${card.id}`}
-        className={`relative ${sizeClasses[size]} rounded bg-[#f4e4bc] border-2 border-[#d4af37] flex flex-col items-center justify-center p-2 shadow-xl ${className}`}
-      >
-        <div className="absolute inset-1.5 border border-[#d4af37]/40 rounded-sm bg-[#251610]/5 flex flex-col items-center justify-center">
-          <div className="w-8 h-8 rounded-full border border-[#d4af37] bg-[#251610] flex items-center justify-center text-[#d4af37] mb-1 font-deco font-bold">
-            ?
-          </div>
-          <span className="font-deco text-[9px] tracking-[0.2em] text-[#2d1b10] uppercase font-bold">CONFIDENTIAL</span>
-        </div>
-      </div>
-    );
-  }
-
+/** The picture on a card, filling its box. */
+export function CardArt({ card, className = '' }: { card: CardName; className?: string }) {
+  const kind = cardKind(card);
+  if (kind === 'suspect') return <Portrait suspect={card as Suspect} className={className} />;
+  if (kind === 'room') return <RoomArt room={card as Room} className={className} />;
   return (
-    <div
-      id={`card-${card.id}`}
-      onClick={isSelectable ? onClick : undefined}
-      className={`group relative ${sizeClasses[size]} rounded bg-[#f4e4bc] text-[#2d1b10] border-2 border-[#d4af37] shadow-xl flex flex-col justify-between p-2 select-none transition-all duration-300 ${
-        isSelectable ? 'cursor-pointer hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(212,175,55,0.2)]' : ''
-      } ${
-        isSelected
-          ? 'ring-4 ring-[#d4af37] scale-105 shadow-[0_0_20px_rgba(212,175,55,0.6)]'
-          : ''
-      } ${className}`}
-    >
-      {/* Inner Inset Frame */}
-      <div className="flex-1 border border-[#d4af37]/30 bg-[#251610]/5 rounded-sm p-1.5 flex flex-col justify-between overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#d4af37]/20 pb-0.5">
-          <span className="text-[8px] font-bold tracking-[0.15em] uppercase text-[#2d1b10]/70">
-            {badge.label}
-          </span>
-          <span className="text-[8px] font-mono text-[#d4af37] font-bold">1926</span>
-        </div>
-
-        {/* Artwork Representation */}
-        <div className="my-1 flex-1 flex flex-col items-center justify-center text-center">
-          {card.type === 'SUSPECT' && (
-            <div className="flex flex-col items-center">
-              <div
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-[#d4af37] flex items-center justify-center shadow-[0_0_10px_rgba(155,17,30,0.3)] mb-1"
-                style={{ backgroundColor: SUSPECT_COLORS[card.name as Suspect]?.hex || '#9b111e' }}
-              >
-                <span className="text-base sm:text-lg font-deco font-bold text-white drop-shadow">
-                  {card.name.charAt(0)}
-                </span>
-              </div>
-              <p className="text-[9px] font-serif-vintage italic text-[#5c3e29] line-clamp-1">
-                {CHARACTER_DETAILS[card.name as Suspect]?.title}
-              </p>
-            </div>
-          )}
-
-          {card.type === 'WEAPON' && (
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg border-2 border-[#d4af37] bg-[#251610] flex items-center justify-center shadow mb-1 text-[#f4e4bc]">
-                <Sparkles className="w-5 h-5 text-[#d4af37]" />
-              </div>
-              <p className="text-[8px] font-mono tracking-wider text-[#7a5c43] uppercase">
-                {WEAPON_DETAILS[card.name as Weapon]?.material}
-              </p>
-            </div>
-          )}
-
-          {card.type === 'ROOM' && (
-            <div className="flex flex-col items-center">
-              <div
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-md border-2 border-[#d4af37] flex items-center justify-center shadow mb-1 text-white"
-                style={{ backgroundColor: ROOM_DEFINITIONS[card.name as Room]?.themeColor || '#78350f' }}
-              >
-                <Flame className="w-5 h-5 text-[#fbbf24]" />
-              </div>
-              <p className="text-[8px] font-serif-vintage italic text-[#5c3e29] line-clamp-1">
-                {ROOM_DEFINITIONS[card.name as Room]?.description.slice(0, 24)}...
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Name in Card */}
-        <div className="text-center border-t border-[#d4af37]/20 pt-0.5">
-          <h4 className="font-deco font-bold text-[10px] sm:text-xs leading-tight text-[#2d1b10] uppercase tracking-wider truncate">
-            {card.name}
-          </h4>
-        </div>
-      </div>
-
-      {/* Signature Artistic Flair Category Pill Bar */}
-      <div
-        className="h-2 sm:h-2.5 mt-1 rounded-full shadow-inner"
-        style={{ backgroundColor: getCategoryColor() }}
-      />
+    <div className={`bg-[radial-gradient(circle_at_50%_40%,#3a2a1c,#120a06)] flex items-center justify-center ${className}`}>
+      <WeaponArt weapon={card as Weapon} className="w-[85%] h-[85%]" />
     </div>
   );
-};
+}
+
+interface CardViewProps {
+  card: CardName;
+  size?: Size;
+  selected?: boolean;
+  onClick?: () => void;
+  className?: string;
+  /** Faded, e.g. a card you know is not the answer. */
+  muted?: boolean;
+}
+
+/** A playing card in the classic layout: category band, framed picture, name plate. */
+export function CardView({ card, size = 'md', selected = false, onClick, className = '', muted = false }: CardViewProps) {
+  const kind = KIND[cardKind(card)];
+  const long = card.length > 10 && !card.includes(' ');
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-pressed={onClick ? selected : undefined}
+      aria-label={card}
+      className={`card-face relative ${SIZES[size]} shrink-0 rounded-[0.7em] p-[0.45em] flex flex-col select-none transition-transform duration-200 disabled:cursor-default ${
+        onClick ? 'cursor-pointer hover:-translate-y-1 active:scale-95' : ''
+      } ${selected ? 'ring-4 ring-[var(--gold-light)] -translate-y-1.5 shadow-[0_0_26px_rgba(255,213,74,0.65)]' : ''} ${
+        muted ? 'opacity-45 grayscale-[60%]' : ''
+      } ${className}`}
+    >
+      <div className={`${kind.band} rounded-t-[0.45em] text-center text-[#f6ecd2] font-deco font-bold uppercase tracking-[0.22em] text-[0.78em] py-[0.15em]`}>
+        {kind.label}
+      </div>
+      <div className="relative flex-1 min-h-0 overflow-hidden rounded-b-[0.2em] rounded-t-[2.6em] mt-[0.3em] mx-[0.15em] border-[0.18em] border-[var(--gold)] shadow-inner">
+        <CardArt card={card} className="absolute inset-0 w-full h-full" />
+      </div>
+      <div className="text-center pt-[0.35em] pb-[0.1em] leading-tight">
+        <div className={`font-deco font-black uppercase text-[#2a1408] ${long ? 'text-[0.82em]' : 'text-[0.98em]'}`}>{card}</div>
+        <div className="font-serif-vintage italic text-[#5c3e29] truncate text-[0.9em]">{cardSubtitle(card)}</div>
+      </div>
+    </button>
+  );
+}
+
+export function CardBack({ size = 'md', className = '' }: { size?: Size; className?: string }) {
+  return (
+    <div className={`card-back relative ${SIZES[size]} shrink-0 rounded-[0.7em] p-[0.45em] ${className}`} aria-hidden="true">
+      <div className="w-full h-full rounded-[0.45em] border-[0.15em] border-[var(--gold)]/70 flex items-center justify-center">
+        <div className="w-[62%] aspect-[3/4] rounded-[50%] bg-[radial-gradient(circle_at_50%_35%,#8a1622,#3d0910)] border-[0.2em] border-[var(--gold)] shadow-[0_0_0_0.2em_rgba(0,0,0,0.35),0_0.3em_0.8em_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
+          <span className="font-deco font-black text-gold-gradient text-[3em] leading-none">?</span>
+          <span className="font-deco font-bold text-[var(--gold-light)] tracking-[0.2em] text-[0.72em] mt-[0.2em]">CLUEDO</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A card that arrives face down and turns over. */
+export function FlipCard({ card, size = 'md', delay = 300 }: { card: CardName; size?: Size; delay?: number }) {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setUp(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  return (
+    // Purely decorative, so it must never catch a tap meant for the buttons around it.
+    <div className="[perspective:1200px] pointer-events-none">
+      <div
+        className="relative transition-transform duration-700 ease-out [transform-style:preserve-3d]"
+        style={{ transform: up ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
+      >
+        <div className="[backface-visibility:hidden]">
+          <CardBack size={size} />
+        </div>
+        <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+          <CardView card={card} size={size} />
+        </div>
+      </div>
+    </div>
+  );
+}

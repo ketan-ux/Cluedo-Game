@@ -1,532 +1,340 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { CardName } from '../game/constants';
+import { Envelope, GameEvent } from '../game/engine';
+import { AnyAction, RoomView } from '../game/protocol';
+import { EventBatch } from '../net/useRoom';
+import { sounds } from '../utils/audio';
+import { haptics } from '../utils/prefs';
+import { BoardView, useBoardMode } from './board/BoardView';
+import { BottomNav, SettingsSheet, Tab, TopBar } from './game/Chrome';
+import { DiceBadge, SuggestionBanner, Toast, Toasts, TurnBanner } from './game/Overlays';
+import { ActionBar, CaseLog, Chat, PlayersStrip, SidePanel, useUnread } from './game/Panels';
+import { DetectiveNotes, useNotebook } from './ui/DetectiveNotebook';
 import {
-  AccusationResultPayload,
-  Card,
-  DisprovedCardPayload,
-  MaskedGameState,
-  MaskedPlayer,
-  Room,
-  Suspect,
-  Weapon,
-  SUSPECT_COLORS,
-} from '../types/cluedo';
-import { MansionBoard } from './board/MansionBoard';
-import { CommandPanel } from './ui/CommandPanel';
-import { HandTray } from './ui/HandTray';
-import { DetectiveNotebook } from './ui/DetectiveNotebook';
-import { SuggestionModal } from './ui/SuggestionModal';
-import { DisproveModal } from './ui/DisproveModal';
-import { DisprovedRevealOverlay } from './ui/DisprovedRevealOverlay';
-import { AccusationModal } from './ui/AccusationModal';
-import { GameOverModal } from './ui/GameOverModal';
-import { EnvelopeInspectionModal } from './ui/EnvelopeInspectionModal';
-import { FloatingSuggestionPopup } from './ui/FloatingSuggestionPopup';
-import { ThreeDDiceOverlay } from './ui/ThreeDDiceOverlay';
-import { UnrefutedTheoryModal } from './ui/UnrefutedTheoryModal';
-import { BookOpen, LogOut, Sparkles, ArrowRight, Eye, ShieldAlert } from 'lucide-react';
+  AccusationModal,
+  AccusationResultModal,
+  CardRevealModal,
+  DisproveModal,
+  GameOverModal,
+  SuggestionModal,
+  UnrefutedModal,
+} from './ui/GameDialogs';
+import { CaseFile, HandFan } from './ui/HandTray';
+import { Modal } from './ui/Modal';
+import { RulesSheet } from './ui/RulesSheet';
 
 interface GameScreenProps {
-  gameState: MaskedGameState;
-  myPlayer?: MaskedPlayer;
-  myHand: Card[];
-  isHost: boolean;
-  disprovedCardReveal: DisprovedCardPayload | null;
-  accusationReveal: AccusationResultPayload | null;
-  onRollDice: () => void;
-  onMoveToken: (x: number, y: number) => void;
-  onUseSecretPassage: (targetRoom: Room) => void;
-  onMakeSuggestion: (suspect: Suspect, weapon: Weapon) => void;
-  onDisproveCard: (cardId: string) => void;
-  onMakeAccusation: (suspect: Suspect, weapon: Weapon, room: Room) => void;
-  onEndTurn: () => void;
-  onSendChat: (text: string) => void;
-  onLeaveGame: () => void;
-  onCloseDisprovedReveal: () => void;
-  onCloseAccusationReveal: () => void;
+  room: RoomView;
+  batch: EventBatch;
+  connected: boolean;
+  act: (action: AnyAction) => void;
+  onLeave: () => void;
 }
 
-export const GameScreen: React.FC<GameScreenProps> = ({
-  gameState,
-  myPlayer,
-  myHand,
-  isHost,
-  disprovedCardReveal,
-  accusationReveal,
-  onRollDice,
-  onMoveToken,
-  onUseSecretPassage,
-  onMakeSuggestion,
-  onDisproveCard,
-  onMakeAccusation,
-  onEndTurn,
-  onSendChat,
-  onLeaveGame,
-  onCloseDisprovedReveal,
-  onCloseAccusationReveal,
-}) => {
-  const [isNotebookOpen, setIsNotebookOpen] = useState(false);
-  const [isSuggestionOpen, setIsSuggestionOpen] = useState(false);
-  const [isAccusationOpen, setIsAccusationOpen] = useState(false);
-  const [isManualEnvelopeOpen, setIsManualEnvelopeOpen] = useState(false);
-  const [dismissedSuggestionTurn, setDismissedSuggestionTurn] = useState<number | null>(null);
-  const [dismissedAccusationKeys, setDismissedAccusationKeys] = useState<Set<string>>(new Set());
-  const [dismissedUnrefutedTurn, setDismissedUnrefutedTurn] = useState<number | null>(null);
-  const [prefilledAccusation, setPrefilledAccusation] = useState<{ suspect: Suspect; weapon: Weapon; room: Room } | null>(null);
+type Popup =
+  | { kind: 'reveal'; card: CardName; otherName: string }
+  | { kind: 'unrefuted'; suggestion: Envelope }
+  | { kind: 'accused'; accuserName: string; isMe: boolean; accusation: Envelope; envelope?: Envelope };
 
-  const activePlayer = gameState.players[gameState.activePlayerIndex];
-  const isMyTurn = myPlayer?.peerId === activePlayer?.peerId;
+export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenProps) {
+  const game = room.game!;
+  const me = game.me;
+  const myId = room.youId;
+  const isHost = room.hostId === myId;
+  const name = useCallback((id: string) => game.players.find((p) => p.id === id)?.name ?? 'Someone', [game.players]);
 
-  // Next player in turn order
-  const numPlayers = gameState.players.length;
-  let nextIdx = (gameState.activePlayerIndex + 1) % numPlayers;
-  let attempts = 0;
-  while (gameState.players[nextIdx]?.hasAccusedWrongly && attempts < numPlayers) {
-    nextIdx = (nextIdx + 1) % numPlayers;
-    attempts++;
-  }
-  const nextPlayer = gameState.players[nextIdx];
+  const [sheet, setSheet] = useState<Tab | 'settings' | 'rules' | null>(null);
+  const [accusing, setAccusing] = useState<Partial<Envelope> | null>(null);
+  const [suggestDismissed, setSuggestDismissed] = useState<number | null>(null);
+  const [popups, setPopups] = useState<Popup[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [rolling, setRolling] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showGameOver, setShowGameOver] = useState(false);
+  const [boardMode, setBoardMode] = useBoardMode();
+  const handled = useRef(batch.id);
 
-  // Check if I am the queried disprover
-  const amIPendingDisprover =
-    gameState.phase === 'DISPROVE' &&
-    gameState.pendingDisproverIndex !== null &&
-    gameState.players[gameState.pendingDisproverIndex]?.peerId === myPlayer?.peerId;
+  // A pending tap-selection only makes sense for the current set of moves.
+  useEffect(() => {
+    setSelected(null);
+  }, [game.turn.number, game.turn.stage]);
 
-  // Current room of active player
-  const currentRoom = activePlayer?.position.room;
+  // Let the envelope open on the table before the result covers it.
+  useEffect(() => {
+    if (game.phase !== 'over') {
+      setShowGameOver(false);
+      return;
+    }
+    const t = setTimeout(() => setShowGameOver(true), boardMode === '3d' ? 2200 : 400);
+    return () => clearTimeout(t);
+  }, [game.phase, boardMode]);
 
-  // Compute if suggestion modal should be open
-  const shouldOpenSuggestion =
-    isSuggestionOpen ||
-    (isMyTurn &&
-      gameState.phase === 'SUGGEST' &&
-      dismissedSuggestionTurn !== gameState.turnNumber &&
-      !gameState.turnHasSuggested &&
-      !!currentRoom);
+  const move = (target: string) => {
+    setSelected(null);
+    act({ type: 'move', target });
+  };
+  const pick = (target: string, pointer: 'mouse' | 'touch') => {
+    if (pointer === 'mouse' || selected === target) move(target);
+    else setSelected(target);
+  };
 
-  // Compute active accusation key to handle clean one-shot dismissals
-  const activeAccusationKey = accusationReveal
-    ? `${accusationReveal.accuserPeerId}-${accusationReveal.accusation.suspect}-${accusationReveal.accusation.weapon}-${accusationReveal.accusation.room}`
-    : gameState.lastAccusationResult
-    ? `${gameState.lastAccusationResult.accuserPeerId}-${gameState.lastAccusationResult.accusation.suspect}-${gameState.lastAccusationResult.accusation.weapon}-${gameState.lastAccusationResult.accusation.room}`
-    : '';
+  const toast = useCallback((text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-2), { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+  }, []);
 
-  const isAccusationDismissed = activeAccusationKey ? dismissedAccusationKeys.has(activeAccusationKey) : false;
+  // Turn server events into animations, sounds and pop-ups, once each.
+  useEffect(() => {
+    if (batch.id === handled.current) return;
+    handled.current = batch.id;
+    for (const e of batch.events as GameEvent[]) {
+      switch (e.type) {
+        case 'turn':
+          if (e.playerId === myId) {
+            sounds.playDoorCreak();
+            haptics.buzz([40, 60, 40]);
+          }
+          break;
+        case 'rolled':
+          sounds.playDiceRoll();
+          setRolling(true);
+          setTimeout(() => setRolling(false), 700);
+          break;
+        case 'moved':
+          if (e.how === 'walk' && e.path.length) {
+            sounds.playPawnStep();
+          } else if (e.how === 'passage') {
+            sounds.playDoorCreak();
+            toast(`${e.suspect} took a secret passage.`);
+          } else if (e.how === 'summoned' && e.to.type === 'room') {
+            toast(`${e.suspect} was brought into the ${e.to.room}.`);
+          }
+          break;
+        case 'cardShown':
+          if (e.card && e.toId === myId) {
+            setPopups((p) => [...p, { kind: 'reveal', card: e.card!, otherName: name(e.fromId) }]);
+          } else if (e.card && e.fromId === myId) {
+            toast(`You showed ${name(e.toId)} the ${e.card}.`);
+          } else {
+            toast(`${name(e.fromId)} showed ${name(e.toId)} a card.`);
+          }
+          break;
+        case 'unrefuted':
+          if (e.playerId === myId && game.turn.suggestion) {
+            const s = game.turn.suggestion;
+            setPopups((p) => [...p, { kind: 'unrefuted', suggestion: { suspect: s.suspect, weapon: s.weapon, room: s.room } }]);
+          } else {
+            toast(`No one could disprove ${name(e.playerId)}!`);
+          }
+          break;
+        case 'accused':
+          if (!e.correct) {
+            setPopups((p) => [
+              ...p,
+              {
+                kind: 'accused',
+                accuserName: name(e.playerId),
+                isMe: e.playerId === myId,
+                accusation: { suspect: e.suspect, weapon: e.weapon, room: e.room },
+                envelope: e.envelope,
+              },
+            ]);
+          }
+          break;
+      }
+    }
+  }, [batch, myId, name, toast, game.turn.suggestion]);
 
-  // Show accusation inspection modal when an accusation is made so everyone can glance at the cards, but never reopen after being dismissed
-  const canViewEnvelopeModal =
-    (!!accusationReveal && !isAccusationDismissed) ||
-    (isManualEnvelopeOpen && !!myPlayer?.hasAccusedWrongly && gameState.phase === 'GAME_OVER');
+  const closePopup = () => setPopups((p) => p.slice(1));
+  const popup = popups[0];
+  const options = game.options;
+  const suggestion = game.turn.suggestion;
+  const showSuggestModal = !!options.suggestIn && suggestDismissed !== game.turn.number;
 
-  const inspectionPayload: AccusationResultPayload | null =
-    accusationReveal && !isAccusationDismissed
-      ? accusationReveal
-      : canViewEnvelopeModal && isManualEnvelopeOpen && gameState.solution && myPlayer?.hasAccusedWrongly
-      ? {
-          isCorrect: false,
-          accuserPeerId: myPlayer?.peerId || '',
-          accuserName: myPlayer?.name || 'Detective',
-          accusation: gameState.lastAccusationResult?.accusation || {
-            suspect: gameState.solution.suspect,
-            weapon: gameState.solution.weapon,
-            room: gameState.solution.room,
-          },
-          envelope: gameState.solution,
-        }
-      : null;
+  const hand = me?.hand ?? [];
+  const mustShow = options.show.length > 0 && !!suggestion;
+  const unread = useUnread(room.chat.length, sheet === 'chat');
+  const notebook = useNotebook(room.code, myId ?? 'spectator');
 
-  const isEnvelopeModalVisible = canViewEnvelopeModal && !!inspectionPayload;
+  // A buzz when someone is waiting on you to show a card.
+  useEffect(() => {
+    if (mustShow) haptics.buzz(90);
+  }, [mustShow, suggestion?.turn]);
 
-  // Breakthrough: When nobody could disprove your suggestion, show prominent explanation!
-  const shouldShowUnrefutedModal = Boolean(
-    isMyTurn &&
-    gameState.phase === 'ACCUSE' &&
-    gameState.lastUnrefutedSuggestion &&
-    dismissedUnrefutedTurn !== gameState.turnNumber &&
-    !isEnvelopeModalVisible &&
-    !isAccusationOpen
+  const notes = me && myId && (
+    <DetectiveNotes notebook={notebook} myId={myId} hand={hand} seen={me.seen} players={game.players} compact />
   );
 
   return (
-    <div
-      id="game-screen"
-      className="relative w-full h-screen flex flex-col overflow-hidden bg-[#0d0705] text-[#f4ecd8] select-none"
-    >
-      {/* Top Navigation Bar */}
-      <header className="h-12 border-b border-[#3d2315] bg-[#1a0e08]/90 px-4 flex items-center justify-between z-20 flex-shrink-0">
-        <div className="flex items-center space-x-3">
-          <span className="font-deco font-black text-base tracking-wider text-[#d4af37]">
-            CLUEDO
-          </span>
-          <span className="text-xs font-mono text-[#baa479] hidden sm:inline">
-            1920s Noir Manor • Room #{gameState.roomCode}
-          </span>
-          {!isHost && (
-            <span className="text-[10px] font-mono bg-[#1a0f0d] text-[#baa479] border border-[#d4af37]/30 px-2 py-0.5 rounded flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Host Synced</span>
-            </span>
-          )}
-          {myPlayer?.hasAccusedWrongly && (
-            <span className="text-[10px] font-mono font-bold bg-red-950/80 text-red-300 border border-red-700/60 px-2 py-0.5 rounded flex items-center space-x-1">
-              <ShieldAlert className="w-3 h-3 text-red-400" />
-              <span>Witness Mode (Eliminated from Turn Rotation)</span>
-            </span>
-          )}
+    <div className="game-grid text-[var(--parchment)]">
+      <TopBar
+        code={room.code}
+        connected={connected}
+        boardMode={boardMode}
+        onToggleBoard={() => setBoardMode(boardMode === '3d' ? '2d' : '3d')}
+        onNotes={() => setSheet('notes')}
+        onSettings={() => setSheet('settings')}
+      />
+
+      <div className="ga-players">
+        <PlayersStrip room={room} />
+      </div>
+
+      {room.away && (
+        <div className="ga-away">
+          <AwayBanner name={name(room.away.memberId)} deadline={room.away.deadline} stage={game.turn.stage} />
         </div>
+      )}
 
-        <div className="flex items-center space-x-3">
-          {/* If eliminated and solution is revealed, allow opening the envelope at will */}
-          {myPlayer?.hasAccusedWrongly && gameState.solution && (
-            <button
-              id="top-inspect-envelope-btn"
-              onClick={() => setIsManualEnvelopeOpen(true)}
-              className="px-2.5 py-1.5 rounded-lg bg-[#9b111e]/30 hover:bg-[#9b111e]/50 text-red-200 border border-red-600/60 font-mono text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer shadow"
-            >
-              <Eye className="w-3.5 h-3.5 text-red-400" />
-              <span>View Murder Envelope</span>
-            </button>
-          )}
+      {notes && <aside className="ga-notes flex-col overflow-y-auto p-2 pr-0">{notes}</aside>}
 
-          {/* Quick Notebook Trigger */}
-          <button
-            id="top-notebook-btn"
-            onClick={() => setIsNotebookOpen(true)}
-            className="px-3 py-1.5 rounded-lg bg-[#2b170e] hover:bg-[#3d2013] text-[#f3e5ab] border border-[#d4af37]/60 font-mono text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer shadow"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-[#d4af37]" />
-            <span>Detective Ledger (N)</span>
-          </button>
-
-          {/* Leave / Exit Case */}
-          <button
-            id="top-leave-match-btn"
-            onClick={onLeaveGame}
-            className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 text-red-200 hover:text-white border border-red-700/60 font-mono text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer shadow"
-            title="Exit Investigation and return to Lobby"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Exit Case</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Play Area */}
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden p-2 sm:p-3 gap-3">
-        {/* Widescreen Left Sidebar: Detective Dossier & Confidential Hand (Visible on xl+ screens) */}
-        {myPlayer && (
-          <aside className="hidden xl:flex w-64 2xl:w-72 flex-shrink-0 flex-col gap-3 h-full overflow-hidden animate-fade-in">
-            {/* Detective Profile Card */}
-            <div className="p-3.5 rounded-xl bg-[#251610] border-2 border-[#d4af37]/40 shadow-xl flex flex-col space-y-2 select-none">
-              <div className="flex items-center space-x-3">
-                <div
-                  className="w-11 h-11 rounded-full border-2 border-[#d4af37] flex items-center justify-center text-white font-deco font-black text-base shadow-[0_0_12px_rgba(212,175,55,0.4)]"
-                  style={{ backgroundColor: SUSPECT_COLORS[myPlayer.character]?.hex || '#9b111e' }}
-                >
-                  {myPlayer.character.charAt(0)}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="font-deco font-bold text-sm text-[#f4e4bc] truncate uppercase tracking-wider">
-                      {myPlayer.name}
-                    </span>
-                    {myPlayer.isHost && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40">
-                        HOST
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-[#baa479] font-serif-vintage italic truncate">
-                    Persona: {myPlayer.character}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[#d4af37]/20 flex items-center justify-between text-[11px] font-serif-vintage">
-                <span className="text-[#baa479]">Location:</span>
-                <span className="font-bold text-[#f4e4bc]">
-                  {myPlayer.position.room
-                    ? `In ${myPlayer.position.room}`
-                    : `Corridor (${myPlayer.position.x}, ${myPlayer.position.y})`}
-                </span>
-              </div>
-
-              {myPlayer.hasAccusedWrongly && (
-                <div className="p-1.5 rounded bg-red-950/80 border border-red-700/60 text-red-300 text-[10px] font-mono flex items-center space-x-1">
-                  <ShieldAlert className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                  <span>Witness Mode (Eliminated)</span>
-                </div>
-              )}
-            </div>
-
-            {/* Vertical Confidential Hand Tray */}
-            <HandTray
-              hand={myHand}
-              onOpenNotebook={() => setIsNotebookOpen(true)}
-              orientation="vertical"
-              className="flex-1 min-h-0"
-            />
-          </aside>
-        )}
-
-        {/* Center: Board Viewport + Bottom Hand Tray (for < xl screens) */}
-        <section className="flex-1 flex flex-col justify-between items-center overflow-hidden min-w-0 h-full space-y-2">
-          {/* 1:1 Mansion Board */}
-          <div className="flex-1 flex items-center justify-center w-full h-full min-h-0 min-w-0 overflow-hidden relative">
-            <MansionBoard
-              gameState={gameState}
-              myPlayer={myPlayer}
-              isMyTurn={isMyTurn}
-              onTileClick={(x, y) => onMoveToken(x, y)}
-              onSecretPassageClick={(targetRoom) => onUseSecretPassage(targetRoom)}
-            />
-
-            {/* Floating Temporary & Collapsible Suggestion Popup for other players */}
-            <FloatingSuggestionPopup
-              suggestion={gameState.currentSuggestion}
-              phase={gameState.phase}
-              pendingDisprover={
-                gameState.pendingDisproverIndex !== null
-                  ? gameState.players[gameState.pendingDisproverIndex]
-                  : null
-              }
-              logs={gameState.logs}
-            />
-
-            {/* Non-looping Corner Dice Reminder Widget */}
-            <ThreeDDiceOverlay
-              diceRoll={gameState.diceRoll}
-              remainingSteps={gameState.remainingSteps}
-              activePlayerName={activePlayer?.name}
-              isMyTurn={isMyTurn}
-            />
-          </div>
-
-          {/* On-Board Turn Action Bars when in Room or Turn Actions Done */}
-          {isMyTurn && !myPlayer?.hasAccusedWrongly && !!currentRoom && !gameState.turnHasSuggested && (gameState.phase === 'SUGGEST' || gameState.phase === 'ACCUSE') && (
-            <div className="w-full max-w-2xl p-2.5 rounded-xl bg-gradient-to-r from-[#1b2b1d] via-[#2d1b10] to-[#1b2b1d] border-2 border-emerald-500/70 shadow-[0_6px_24px_rgba(0,0,0,0.85)] flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-fade-in flex-shrink-0">
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-emerald-950/80 border border-emerald-500 flex items-center justify-center text-emerald-400 flex-shrink-0">
-                  <span className="text-base">🏛️</span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-deco font-bold text-[#f4e4bc] uppercase tracking-wider truncate">
-                    Inside the <span className="text-[#d4af37]">{currentRoom}</span>
-                  </p>
-                  <p className="text-[10px] text-[#baa479] font-serif-vintage italic truncate">
-                    Inspect cards, formulate a theory, accuse, or pass your turn.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 flex-shrink-0 w-full sm:w-auto justify-end">
-                <button
-                  id="board-suggest-btn"
-                  onClick={() => setIsSuggestionOpen(true)}
-                  className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white font-deco font-bold text-xs uppercase tracking-wider border border-emerald-400/80 shadow-md shadow-emerald-950/50 flex items-center justify-center space-x-1.5 transition-all cursor-pointer transform hover:scale-105 active:scale-95"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>Make Suggestion</span>
-                </button>
-
-                <button
-                  id="board-accuse-btn"
-                  onClick={() => setIsAccusationOpen(true)}
-                  className="px-3 py-1.5 rounded-lg bg-[#9b111e] hover:bg-[#b81424] text-white font-deco font-bold text-xs uppercase tracking-wider border border-[#d4af37]/40 transition-colors cursor-pointer"
-                  title="Make a Final Accusation"
-                >
-                  Accuse
-                </button>
-
-                <button
-                  id="board-pass-turn-btn"
-                  onClick={onEndTurn}
-                  className="px-3 py-1.5 rounded-lg bg-[#3b2012] hover:bg-[#5c321d] text-[#baa479] hover:text-[#f4e4bc] border border-[#d4af37]/30 text-xs font-deco uppercase tracking-wider transition-colors cursor-pointer flex items-center space-x-1"
-                >
-                  <span>Pass</span>
-                  <ArrowRight className="w-3 h-3 text-[#d4af37]" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {isMyTurn && !myPlayer?.hasAccusedWrongly && (gameState.turnHasSuggested || !currentRoom) && gameState.phase === 'ACCUSE' && (
-            <div className="w-full max-w-xl p-2.5 rounded-xl bg-gradient-to-r from-[#22120b] via-[#351a0e] to-[#22120b] border-2 border-[#d4af37] shadow-[0_6px_24px_rgba(0,0,0,0.85)] flex items-center justify-between gap-3 animate-fade-in flex-shrink-0">
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-[#d4af37]/20 border border-[#d4af37] flex items-center justify-center text-[#d4af37] flex-shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-deco font-bold text-[#f4e4bc] uppercase tracking-wider truncate">
-                    Turn Actions Done
-                  </p>
-                  <p className="text-[10px] text-[#baa479] font-serif-vintage italic truncate">
-                    Pass turn to <strong className="text-[#d4af37] not-italic">{nextPlayer?.name || 'next player'}</strong> ({nextPlayer?.character})
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 flex-shrink-0">
-                <button
-                  onClick={() => setIsAccusationOpen(true)}
-                  className="px-3 py-1.5 rounded-lg bg-[#9b111e] hover:bg-[#b81424] text-white font-deco font-bold text-[10px] uppercase tracking-wider border border-[#d4af37]/40 transition-colors cursor-pointer"
-                  title="Make a Final Accusation"
-                >
-                  Accuse
-                </button>
-                <button
-                  id="board-pass-turn-btn"
-                  onClick={onEndTurn}
-                  className="px-4 py-1.5 rounded-lg bg-[#d4af37] hover:bg-[#e6c24d] text-[#1a0f0d] font-deco font-black text-xs uppercase tracking-wider shadow-lg shadow-[#d4af37]/30 flex items-center space-x-1.5 transition-all cursor-pointer transform hover:scale-105 active:scale-95"
-                >
-                  <span>Pass Turn</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Bottom Docked Hand Tray (Only on screens below xl) */}
-          <div className="w-full flex-shrink-0 xl:hidden">
-            <HandTray
-              hand={myHand}
-              onOpenNotebook={() => setIsNotebookOpen(true)}
-              orientation="horizontal"
-            />
-          </div>
-        </section>
-
-        {/* Right Docking Command & Transcript Panel */}
-        <aside className="w-full lg:w-[380px] xl:w-[400px] 2xl:w-[440px] h-[340px] lg:h-full flex-shrink-0">
-          <CommandPanel
-            gameState={gameState}
-            myPlayer={myPlayer}
-            isMyTurn={isMyTurn}
-            onRollDice={onRollDice}
-            onOpenSuggestion={() => setIsSuggestionOpen(true)}
-            onOpenAccusation={() => setIsAccusationOpen(true)}
-            onOpenNotebook={() => setIsNotebookOpen(true)}
-            onEndTurn={onEndTurn}
-            onSendChat={onSendChat}
-            onSecretPassage={(room) => onUseSecretPassage(room)}
-            onInspectEnvelope={() => setIsManualEnvelopeOpen(true)}
+      <section className="ga-board px-1.5 sm:px-2">
+        <div className="relative w-full h-full rounded-2xl overflow-hidden felt shadow-[inset_0_0_40px_rgba(0,0,0,0.6)]">
+          <BoardView
+            mode={boardMode}
+            onUnsupported={() => setBoardMode('2d')}
+            game={game}
+            myId={myId}
+            batch={batch}
+            selected={selected}
+            onPick={pick}
+            onPassage={() => act({ type: 'passage' })}
           />
-        </aside>
-      </main>
+          <SuggestionBanner suggestion={suggestion} players={game.players} />
+          {boardMode === '2d' && <DiceBadge roll={game.turn.roll} rolling={rolling} />}
+          <TurnBanner game={game} youId={myId} />
+          <Toasts toasts={toasts} />
+        </div>
+      </section>
 
-      {/* Modals & Overlays */}
-      {/* 1. Detective Notebook */}
-      <DetectiveNotebook
-        isOpen={isNotebookOpen}
-        onClose={() => setIsNotebookOpen(false)}
-        myHand={myHand}
-        players={gameState.players}
-        myPeerId={myPlayer?.peerId}
-        roomCode={gameState.roomCode}
-      />
+      <div className="ga-dock px-1.5 sm:px-2 pt-1.5 pb-1.5">
+        <div className="max-w-3xl mx-auto">
+          <ActionBar
+            room={room}
+            selected={selected}
+            onMove={move}
+            onClearSelection={() => setSelected(null)}
+            onRoll={() => act({ type: 'roll' })}
+            onPassage={() => act({ type: 'passage' })}
+            onSuggest={() => setSuggestDismissed(null)}
+            onAccuse={() => setAccusing({})}
+            onEndTurn={() => act({ type: 'endTurn' })}
+          />
+        </div>
+      </div>
 
-      {/* 2. Suggestion Modal */}
-      {currentRoom && (
-        <SuggestionModal
-          isOpen={shouldOpenSuggestion}
-          currentRoom={currentRoom}
-          myHand={myHand}
-          onOpenNotebook={() => setIsNotebookOpen(true)}
-          onSuggest={(suspect, weapon) => {
-            setIsSuggestionOpen(false);
-            setDismissedSuggestionTurn(gameState.turnNumber);
-            onMakeSuggestion(suspect, weapon);
-          }}
-          onPass={() => {
-            setIsSuggestionOpen(false);
-            setDismissedSuggestionTurn(gameState.turnNumber);
-          }}
-          onSkipAndEndTurn={() => {
-            setIsSuggestionOpen(false);
-            setDismissedSuggestionTurn(gameState.turnNumber);
-            onEndTurn();
-          }}
+      <div className="ga-hand justify-center">
+        <HandFan hand={hand} />
+      </div>
+
+      <aside className="ga-side p-2 pl-0">
+        <SidePanel room={room} onChat={(text) => act({ type: 'chat', text })} />
+      </aside>
+
+      <BottomNav onOpen={setSheet} cards={hand.length} unread={unread} alert={mustShow} />
+
+      {sheet === 'cards' && me && (
+        <Modal title="Case file" subtitle="Only you can see this." onClose={() => setSheet(null)} tall wide>
+          <CaseFile hand={hand} seen={me.seen} shown={me.shown} players={game.players} />
+        </Modal>
+      )}
+      {sheet === 'notes' && notes && (
+        <Modal title="Detective notes" onClose={() => setSheet(null)} tall wide bodyClassName="!px-2 sm:!px-4">
+          <DetectiveNotes notebook={notebook} myId={myId!} hand={hand} seen={me!.seen} players={game.players} titled={false} />
+        </Modal>
+      )}
+      {sheet === 'log' && (
+        <Modal title="Case log" onClose={() => setSheet(null)} tall wide>
+          <CaseLog game={game} />
+        </Modal>
+      )}
+      {sheet === 'chat' && (
+        <Modal title="Chat" onClose={() => setSheet(null)} tall bodyClassName="flex flex-col">
+          <Chat messages={room.chat} youId={myId} onSend={(text) => act({ type: 'chat', text })} />
+        </Modal>
+      )}
+      {sheet === 'settings' && (
+        <SettingsSheet
+          boardMode={boardMode}
+          setBoardMode={setBoardMode}
+          onRules={() => setSheet('rules')}
+          onLeave={onLeave}
+          onClose={() => setSheet(null)}
         />
       )}
+      {sheet === 'rules' && <RulesSheet onClose={() => setSheet(null)} />}
 
-      {/* 3. Disprove Modal for Queried Defender */}
-      <DisproveModal
-        isOpen={amIPendingDisprover}
-        suggestion={gameState.currentSuggestion}
-        myHand={myHand}
-        onDisprove={(cardId) => onDisproveCard(cardId)}
-      />
-
-      {/* 4. Disproved Reveal Inspection Overlay for Suggester */}
-      <DisprovedRevealOverlay
-        payload={disprovedCardReveal}
-        onClose={onCloseDisprovedReveal}
-        onOpenNotebook={() => setIsNotebookOpen(true)}
-        onEndTurn={onEndTurn}
-      />
-
-      {/* 5. Accusation Modal */}
-      <AccusationModal
-        isOpen={isAccusationOpen}
-        myHand={myHand}
-        prefilledSuspect={prefilledAccusation?.suspect}
-        prefilledWeapon={prefilledAccusation?.weapon}
-        prefilledRoom={prefilledAccusation?.room}
-        onOpenNotebook={() => setIsNotebookOpen(true)}
-        onAccuse={(suspect, weapon, room) => {
-          setIsAccusationOpen(false);
-          setPrefilledAccusation(null);
-          onMakeAccusation(suspect, weapon, room);
-        }}
-        onClose={() => {
-          setIsAccusationOpen(false);
-          setPrefilledAccusation(null);
-        }}
-      />
-
-      {/* Unrefuted Suggestion Breakthrough Modal for Suggester */}
-      <UnrefutedTheoryModal
-        isOpen={shouldShowUnrefutedModal}
-        suggestion={gameState.lastUnrefutedSuggestion || null}
-        myHand={myHand}
-        onClose={() => setDismissedUnrefutedTurn(gameState.turnNumber)}
-        onOpenAccusation={() => {
-          if (gameState.lastUnrefutedSuggestion) {
-            setPrefilledAccusation({
-              suspect: gameState.lastUnrefutedSuggestion.suspect,
-              weapon: gameState.lastUnrefutedSuggestion.weapon,
-              room: gameState.lastUnrefutedSuggestion.room,
-            });
-          }
-          setDismissedUnrefutedTurn(gameState.turnNumber);
-          setIsAccusationOpen(true);
-        }}
-        onOpenNotebook={() => setIsNotebookOpen(true)}
-        onPassTurn={onEndTurn}
-      />
-
-      {/* 6. Real Envelope Inspection Modal (Shows exact cards inside the Murder Envelope) */}
-      <EnvelopeInspectionModal
-        isOpen={isEnvelopeModalVisible}
-        payload={inspectionPayload}
-        onClose={() => {
-          if (activeAccusationKey) {
-            setDismissedAccusationKeys((prev) => new Set([...prev, activeAccusationKey]));
-          }
-          setIsManualEnvelopeOpen(false);
-          onCloseAccusationReveal();
-        }}
-        onOpenNotebook={() => setIsNotebookOpen(true)}
-      />
-
-      {/* 7. Game Over Win/Loss Celebration Modal */}
-      {gameState.phase === 'GAME_OVER' && (
+      {/* Showing a card is compulsory, so it comes first. */}
+      {options.show.length > 0 && suggestion ? (
+        <DisproveModal
+          key={`${suggestion.turn}`}
+          suggesterName={name(suggestion.suggesterId)}
+          suggestion={suggestion}
+          cards={options.show}
+          onShow={(card) => act({ type: 'show', card })}
+        />
+      ) : popup?.kind === 'reveal' ? (
+        <CardRevealModal card={popup.card} otherName={popup.otherName} direction="received" onClose={closePopup} />
+      ) : popup?.kind === 'accused' ? (
+        <AccusationResultModal {...popup} onClose={closePopup} />
+      ) : popup?.kind === 'unrefuted' ? (
+        <UnrefutedModal
+          suggestion={popup.suggestion}
+          hand={hand}
+          canAccuse={options.accuse}
+          onClose={closePopup}
+          onAccuse={() => {
+            setAccusing(popup.suggestion);
+            closePopup();
+          }}
+        />
+      ) : game.phase === 'over' && game.envelope && showGameOver ? (
         <GameOverModal
-          winner={gameState.winner}
-          solution={gameState.solution}
-          onPlayAgain={onLeaveGame}
+          winnerName={game.winnerId ? name(game.winnerId) : null}
+          winnerSuspect={game.players.find((p) => p.id === game.winnerId)?.suspect}
+          envelope={game.envelope}
+          isHost={isHost}
+          onRematch={() => act({ type: 'rematch' })}
+          onLeave={onLeave}
         />
-      )}
+      ) : accusing ? (
+        <AccusationModal
+          hand={hand}
+          initial={accusing}
+          onClose={() => setAccusing(null)}
+          onAccuse={(e) => {
+            setAccusing(null);
+            act({ type: 'accuse', ...e });
+          }}
+        />
+      ) : showSuggestModal && options.suggestIn ? (
+        <SuggestionModal
+          room={options.suggestIn}
+          hand={hand}
+          onClose={() => setSuggestDismissed(game.turn.number)}
+          onSuggest={(suspect, weapon) => {
+            setSuggestDismissed(game.turn.number);
+            act({ type: 'suggest', suspect, weapon });
+          }}
+        />
+      ) : null}
+
     </div>
   );
-};
+}
+
+function AwayBanner({ name, deadline, stage }: { name: string; deadline: number; stage: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.ceil((deadline - now) / 1000));
+  return (
+    <div className="px-3 py-1.5 bg-red-950/80 border-y border-red-800/60 text-sm text-red-100 text-center">
+      {name} has disconnected. {stage === 'disprove' ? 'A card will be shown for them' : 'Their turn will be skipped'} in {secs}s
+      unless they return.
+    </div>
+  );
+}

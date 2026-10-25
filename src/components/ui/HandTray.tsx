@@ -1,148 +1,85 @@
 import React from 'react';
-import { Card } from '../../types/cluedo';
+import { CardName } from '../../game/constants';
+import { SeenCard, ShownCard } from '../../game/engine';
+import { PublicPlayer } from '../../game/view';
 import { CardView } from './CardView';
-import { Shield, BookOpen } from 'lucide-react';
+import { SectionTitle } from './Modal';
 
-interface HandTrayProps {
-  hand: Card[];
-  onOpenNotebook: () => void;
-  orientation?: 'horizontal' | 'vertical';
-  className?: string;
+/** Your hand, fanned out under the board on wide screens. */
+export function HandFan({ hand }: { hand: CardName[] }) {
+  const mid = (hand.length - 1) / 2;
+  return (
+    <section aria-label={`Your cards (${hand.length})`} className="w-full flex flex-col items-center pt-1 pb-5">
+      <div className="hand-fan flex justify-center items-end px-6">
+        {hand.map((card, i) => (
+          <div key={card} style={{ transform: `rotate(${(i - mid) * 2.5}deg) translateY(${Math.abs(i - mid) * 2}px)`, zIndex: i }}>
+            <CardView card={card} size="sm" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
-export const HandTray: React.FC<HandTrayProps> = ({
+/** Everything you know from cards: your hand, what you were shown, and what you showed. */
+export function CaseFile({
   hand,
-  onOpenNotebook,
-  orientation = 'horizontal',
-  className = '',
-}) => {
-  if (orientation === 'vertical') {
-    return (
-      <div
-        id="hand-tray-vertical"
-        className={`w-full rounded-xl bg-[#251610] border-2 border-[#d4af37]/40 p-3 shadow-xl flex flex-col space-y-3 select-none relative overflow-hidden ${className}`}
-      >
-        <div className="absolute inset-0 artistic-radial-dots opacity-20 pointer-events-none" />
-
-        <div className="relative z-10 flex items-center justify-between border-b border-[#d4af37]/30 pb-2">
-          <div className="flex items-center space-x-2">
-            <Shield className="w-4 h-4 text-[#d4af37]" />
-            <span className="font-deco font-bold text-[#f4e4bc] uppercase tracking-wider text-xs">
-              Confidential Hand
-            </span>
-          </div>
-          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#1a0f0d] text-[#d4af37] border border-[#d4af37]/40">
-            {hand.length} Cards
-          </span>
-        </div>
-
-        <p className="relative z-10 text-[10px] font-serif-vintage italic text-[#baa479]">
-          Your private evidence cards. These are 100% ruled out from the confidential Murder Envelope.
-        </p>
-
-        {/* Cards Vertical Stack */}
-        <div className="relative z-10 flex-1 overflow-y-auto space-y-2 pr-1 max-h-[calc(100vh-320px)]">
-          {hand.length === 0 ? (
-            <div className="py-6 text-center text-xs font-serif-vintage text-[#baa479] italic">
-              Awaiting case evidence distribution...
-            </div>
-          ) : (
-            hand.map((card) => {
-              const typeColor =
-                card.type === 'SUSPECT'
-                  ? 'border-red-600/70 bg-red-950/40 text-red-200'
-                  : card.type === 'WEAPON'
-                  ? 'border-amber-600/70 bg-amber-950/40 text-amber-200'
-                  : 'border-emerald-600/70 bg-emerald-950/40 text-emerald-200';
-
-              const icon =
-                card.type === 'SUSPECT' ? '👤' : card.type === 'WEAPON' ? '🗡️' : '🏛️';
-
-              return (
-                <div
-                  key={card.id}
-                  className={`p-2.5 rounded-lg border flex items-center justify-between shadow-md transition-all hover:scale-[1.02] ${typeColor}`}
-                >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className="text-base flex-shrink-0">{icon}</span>
-                    <div className="min-w-0">
-                      <p className="font-deco font-bold text-xs truncate text-[#f4e4bc]">
-                        {card.name}
-                      </p>
-                      <span className="text-[9px] font-mono tracking-widest uppercase opacity-80">
-                        {card.type}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#1a0f0d]/80 text-[#d4af37] border border-[#d4af37]/30 flex-shrink-0">
-                    Ruled Out
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <button
-          onClick={onOpenNotebook}
-          className="relative z-10 w-full py-2 px-3 rounded-lg bg-[#1a0f0d] hover:bg-[#3d2013] text-[#d4af37] hover:text-[#fff2b2] border border-[#d4af37]/40 flex items-center justify-center space-x-2 text-xs font-deco font-bold uppercase tracking-wider transition-all cursor-pointer shadow"
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>Open Detective Ledger (N)</span>
-        </button>
-      </div>
-    );
-  }
-
-  // Default horizontal dock
+  seen,
+  shown,
+  players,
+}: {
+  hand: CardName[];
+  seen: SeenCard[];
+  shown: ShownCard[];
+  players: PublicPlayer[];
+}) {
+  const name = (id: string) => players.find((p) => p.id === id)?.name ?? 'Someone';
   return (
-    <div
-      id="hand-tray"
-      className={`w-full max-w-5xl mx-auto rounded-xl bg-[#251610] border-2 border-[#d4af37]/40 p-2.5 sm:p-3 shadow-[0_12px_36px_rgba(0,0,0,0.85)] flex flex-col space-y-1.5 select-none relative overflow-hidden ${className}`}
-    >
-      {/* Subtle gold radial dot background */}
-      <div className="absolute inset-0 artistic-radial-dots opacity-20 pointer-events-none" />
-
-      <div className="relative z-10 flex items-center justify-between px-2 text-xs font-serif-vintage text-[#d4af37]">
-        <div className="flex items-center space-x-2">
-          <Shield className="w-4 h-4 text-[#d4af37]" />
-          <span className="font-deco font-bold text-[#f4e4bc] uppercase tracking-[0.15em] text-xs">
-            Confidential Dossier Hand ({hand.length} Cards)
-          </span>
-          <span className="text-[11px] font-serif-vintage italic text-[#baa479] hidden sm:inline">
-            (Excluded from Murder Envelope)
-          </span>
+    <div className="space-y-5">
+      <section aria-label={`Your cards (${hand.length})`} className="space-y-3">
+        <SectionTitle>Your cards · {hand.length}</SectionTitle>
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 justify-items-center">
+          {hand.map((card) => (
+            <CardView key={card} card={card} size="sm" />
+          ))}
         </div>
-
-        <button
-          onClick={onOpenNotebook}
-          className="text-xs text-[#d4af37] hover:text-[#fff2b2] flex items-center space-x-1.5 cursor-pointer font-bold tracking-wider uppercase font-deco transition-colors px-2.5 py-1 rounded border border-[#d4af37]/30 hover:bg-[#d4af37]/10"
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>Detective Ledger</span>
-        </button>
-      </div>
-
-      <div className="relative z-10 flex items-center justify-center gap-2.5 sm:gap-3 overflow-x-auto py-1.5 px-2">
-        {hand.length === 0 ? (
-          <div className="py-4 text-center text-xs font-serif-vintage text-[#baa479] italic tracking-wide">
-            Awaiting case evidence distribution...
-          </div>
+        <p className="text-center text-sm italic text-[var(--muted)]">None of these can be in the envelope.</p>
+      </section>
+      <section className="space-y-2">
+        <SectionTitle>Shown to you</SectionTitle>
+        {seen.length === 0 ? (
+          <p className="text-center text-sm italic text-[var(--muted)]">Nobody has shown you a card yet.</p>
         ) : (
-          hand.map((card, idx) => (
-            <div
-              key={card.id}
-              className="transform hover:-translate-y-2 hover:scale-105 transition-all duration-300 shadow-xl"
-              style={{
-                transform:
-                  hand.length > 1 ? `rotate(${(idx - (hand.length - 1) / 2) * 2}deg)` : undefined,
-              }}
-            >
-              <CardView card={card} size="sm" />
-            </div>
-          ))
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[...seen].reverse().map((s) => (
+              <li key={`${s.card}-${s.turn}`} className="flex items-center gap-3 p-1.5 rounded-xl bg-black/20 border border-[var(--gold)]/15">
+                <CardView card={s.card} size="xs" />
+                <div className="text-sm leading-snug">
+                  <div className="font-deco font-bold">{s.card}</div>
+                  <div className="italic text-[var(--muted)]">
+                    from {name(s.fromId)}, turn {s.turn}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </section>
+      {shown.length > 0 && (
+        <section className="space-y-2">
+          <SectionTitle>You showed</SectionTitle>
+          <ul className="space-y-1 text-sm">
+            {[...shown].reverse().map((s) => (
+              <li key={`${s.card}-${s.turn}`} className="flex justify-between gap-2 px-2 py-1 rounded-lg bg-black/15">
+                <span className="font-semibold">{s.card}</span>
+                <span className="italic text-[var(--muted)]">
+                  to {name(s.toId)}, turn {s.turn}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
-};
+}
