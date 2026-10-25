@@ -6,6 +6,13 @@ A private online game of Cluedo for friends, played in the browser on phones and
 - **Real card privacy:** the whole game lives on a server you control (a Cloudflare Durable Object). Each player's browser only ever receives that player's own cards and the cards shown to them.
 - **Rejoin anytime:** reload or come back later on the same device and you get your seat back. If someone drops out, the game waits for them, then shows a card or skips their turn for them so nobody is stuck.
 - **Computer players** that deduce from what they are shown, if you're short of people.
+- **A 3D table:** themed rooms with furniture, turned pawns, weapon miniatures, dice that tumble onto the staircase, pawns that walk their route, and an envelope that opens when the case is solved. A flat 2D board is one tap away (top bar), and is used automatically where 3D isn't supported.
+
+### Board controls
+
+- Drag to move around, pinch (or scroll) to zoom, two-finger twist (or right-drag) to turn.
+- The buttons in the board's corner fit the board to the screen, switch between angled and top-down views, and turn the board a quarter.
+- On a phone, tap a glowing square to see the route, then tap it again (or **Move here**) to go. Rooms you can reach also appear as **Enter …** buttons.
 
 ## Playing
 
@@ -43,7 +50,8 @@ The free Workers plan is plenty: an idle room costs nothing, and a game night us
 ```
 src/game/     rules engine, board, bots and per-player views (shared by site and server)
 src/net/      WebSocket client and React hook
-src/components/  screens, board and dialogs
+src/components/  screens, dialogs and the 2D board
+src/components/board3d/  3D board (three.js), loaded only when a game starts
 worker/       Cloudflare Worker entry and the GameRoom Durable Object
 ```
 

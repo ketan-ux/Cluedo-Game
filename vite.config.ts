@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The 3D board is one deliberately large chunk, loaded only once a game starts.
+  build: { chunkSizeWarningLimit: 1100 },
   server: {
     // Wrangler keeps local room storage here; watching it would reload the page on every move.
     watch: { ignored: ['**/.wrangler/**', '**/dist/**'] },

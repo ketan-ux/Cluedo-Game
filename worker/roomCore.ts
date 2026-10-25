@@ -37,8 +37,8 @@ export interface RoomData {
   away: { memberId: string; deadline: number } | null;
 }
 
-/** How long a bot "thinks" before acting, so humans can follow along. */
-const BOT_DELAY: Record<Stage, number> = { roll: 1100, move: 1400, suggest: 1600, disprove: 1800, end: 1100 };
+/** How long a bot "thinks" before acting, long enough for the dice and walking animations to finish. */
+const BOT_DELAY: Record<Stage, number> = { roll: 1200, move: 1800, suggest: 2400, disprove: 1800, end: 1900 };
 /** How long the game waits for a disconnected player before acting for them. */
 const AWAY_GRACE = { disprove: 45_000, turn: 90_000 };
 export const ROOM_TTL = 7 * 24 * 60 * 60 * 1000;

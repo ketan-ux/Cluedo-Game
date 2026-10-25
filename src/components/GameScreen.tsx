@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, LogOut, WifiOff } from 'lucide-react';
+import { Box, BookOpen, LogOut, Square as SquareIcon, WifiOff } from 'lucide-react';
 import { CardName } from '../game/constants';
 import { Envelope, GameEvent } from '../game/engine';
 import { AnyAction, RoomView } from '../game/protocol';
 import { EventBatch } from '../net/useRoom';
 import { sounds } from '../utils/audio';
-import { Board2D, Walk } from './board/Board2D';
+import { BoardView, useBoardMode } from './board/BoardView';
 import { DiceBadge, SuggestionBanner, Toast, Toasts } from './game/Overlays';
 import { ActionBar, PlayersStrip, SidePanel } from './game/Panels';
 import { DetectiveNotebook } from './ui/DetectiveNotebook';
@@ -45,9 +45,35 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
   const [suggestDismissed, setSuggestDismissed] = useState<number | null>(null);
   const [popups, setPopups] = useState<Popup[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [walk, setWalk] = useState<Walk | null>(null);
   const [rolling, setRolling] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showGameOver, setShowGameOver] = useState(false);
+  const [boardMode, setBoardMode] = useBoardMode();
   const handled = useRef(batch.id);
+
+  // A pending tap-selection only makes sense for the current set of moves.
+  useEffect(() => {
+    setSelected(null);
+  }, [game.turn.number, game.turn.stage]);
+
+  // Let the envelope open on the table before the result covers it.
+  useEffect(() => {
+    if (game.phase !== 'over') {
+      setShowGameOver(false);
+      return;
+    }
+    const t = setTimeout(() => setShowGameOver(true), boardMode === '3d' ? 2200 : 400);
+    return () => clearTimeout(t);
+  }, [game.phase, boardMode]);
+
+  const move = (target: string) => {
+    setSelected(null);
+    act({ type: 'move', target });
+  };
+  const pick = (target: string, pointer: 'mouse' | 'touch') => {
+    if (pointer === 'mouse' || selected === target) move(target);
+    else setSelected(target);
+  };
 
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
@@ -74,7 +100,6 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
           break;
         case 'moved':
           if (e.how === 'walk' && e.path.length) {
-            setWalk({ id: batch.id, suspect: e.suspect, path: e.path });
             sounds.playPawnStep();
           } else if (e.how === 'passage') {
             sounds.playDoorCreak();
@@ -141,6 +166,14 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
         </div>
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => setBoardMode(boardMode === '3d' ? '2d' : '3d')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#2b170e] border border-[#d4af37]/40 text-[11px] font-bold"
+            aria-label={boardMode === '3d' ? 'Switch to the flat 2D board' : 'Switch to the 3D board'}
+          >
+            {boardMode === '3d' ? <SquareIcon className="w-3.5 h-3.5 text-[#d4af37]" /> : <Box className="w-3.5 h-3.5 text-[#d4af37]" />}
+            {boardMode === '3d' ? '2D' : '3D'}
+          </button>
+          <button
             onClick={() => setNotebook(true)}
             className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2b170e] border border-[#d4af37]/60 text-xs font-bold"
           >
@@ -169,19 +202,25 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
 
         <section className="flex flex-col gap-2 shrink-0 lg:shrink lg:min-h-0 lg:flex-1 items-center">
           <div className="relative w-full aspect-[248/258] max-h-[52dvh] lg:max-h-none lg:aspect-auto lg:flex-1 lg:min-h-0">
-            <Board2D
+            <BoardView
+              mode={boardMode}
+              onUnsupported={() => setBoardMode('2d')}
               game={game}
               myId={myId}
-              walk={walk}
-              onMove={(target) => act({ type: 'move', target })}
+              batch={batch}
+              selected={selected}
+              onPick={pick}
               onPassage={() => act({ type: 'passage' })}
             />
             <SuggestionBanner suggestion={suggestion} players={game.players} />
-            <DiceBadge roll={game.turn.roll} rolling={rolling} />
+            {boardMode === '2d' && <DiceBadge roll={game.turn.roll} rolling={rolling} />}
           </div>
           <div className="w-full lg:max-w-3xl">
             <ActionBar
               room={room}
+              selected={selected}
+              onMove={move}
+              onClearSelection={() => setSelected(null)}
               onRoll={() => act({ type: 'roll' })}
               onPassage={() => act({ type: 'passage' })}
               onSuggest={() => setSuggestDismissed(null)}
@@ -228,7 +267,7 @@ export function GameScreen({ room, batch, connected, act, onLeave }: GameScreenP
             closePopup();
           }}
         />
-      ) : game.phase === 'over' && game.envelope ? (
+      ) : game.phase === 'over' && game.envelope && showGameOver ? (
         <GameOverModal
           winnerName={game.winnerId ? name(game.winnerId) : null}
           winnerSuspect={game.players.find((p) => p.id === game.winnerId)?.suspect}

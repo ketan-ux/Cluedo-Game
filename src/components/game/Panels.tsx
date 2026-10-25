@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, BookOpen, Dices, DoorOpen, Gavel, Send, Sparkles, WifiOff } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, Dices, DoorOpen, Gavel, Send, Sparkles, WifiOff } from 'lucide-react';
 import { SUSPECT_COLORS } from '../../game/constants';
+import { MoveOption } from '../../game/movement';
 import { GameView } from '../../game/view';
 import { ChatMessage, MemberView, RoomView } from '../../game/protocol';
 import { Button } from '../ui/Modal';
@@ -50,13 +51,19 @@ function statusLine(room: RoomView): string {
       ? 'Choose a card to show.'
       : `Waiting for ${name(turn.suggestion?.disproverId)} to show a card…`;
   }
-  if (!mine) return `${name(turn.playerId)} is taking their turn.`;
+  if (!mine) {
+    return turn.roll && turn.stage === 'move'
+      ? `${name(turn.playerId)} rolled ${turn.roll[0] + turn.roll[1]}.`
+      : `${name(turn.playerId)} is taking their turn.`;
+  }
   if (turn.stage === 'roll') {
     if (options.suggestIn) return `You were brought into the ${options.suggestIn}. Suggest here, or roll to leave.`;
     return options.passage ? `Roll the dice, or take the secret passage to the ${options.passage}.` : 'Your turn. Roll the dice.';
   }
   if (turn.stage === 'move') {
-    return options.moves.length ? `You rolled ${turn.roll![0] + turn.roll![1]}. Tap a glowing square or room.` : 'You are boxed in and cannot move.';
+    return options.moves.length
+      ? `You rolled ${turn.roll![0] + turn.roll![1]}. Pick a glowing square, or enter a room.`
+      : 'You are boxed in and cannot move.';
   }
   if (turn.stage === 'suggest') return `You are in the ${options.suggestIn}. Make a suggestion?`;
   return 'Accuse, or end your turn.';
@@ -64,6 +71,9 @@ function statusLine(room: RoomView): string {
 
 export function ActionBar({
   room,
+  selected,
+  onMove,
+  onClearSelection,
   onRoll,
   onPassage,
   onSuggest,
@@ -72,6 +82,9 @@ export function ActionBar({
   onNotebook,
 }: {
   room: RoomView;
+  selected: string | null;
+  onMove: (target: string) => void;
+  onClearSelection: () => void;
   onRoll: () => void;
   onPassage: () => void;
   onSuggest: () => void;
@@ -80,11 +93,52 @@ export function ActionBar({
   onNotebook: () => void;
 }) {
   const o = room.game!.options;
+  const rooms = o.moves.filter((m): m is Extract<MoveOption, { kind: 'room' }> => m.kind === 'room');
+  const chosen = o.moves.find((m) => m.key === selected);
   return (
     <div className="w-full rounded-xl bg-[#1a0f0d] border-2 border-[#d4af37]/50 p-2 flex flex-col gap-2 shadow-xl">
       <p className="text-xs sm:text-sm font-serif-vintage text-[#f4e4bc] px-1" aria-live="polite">
-        {statusLine(room)}
+        {chosen
+          ? chosen.kind === 'room'
+            ? `Enter the ${chosen.room}?`
+            : `Move ${chosen.path.length} squares here?`
+          : statusLine(room)}
       </p>
+      {chosen && (
+        <div className="flex gap-2">
+          <Button id="confirm-move" onClick={() => onMove(chosen.key)} className="flex-1">
+            <Check className="w-4 h-4" /> {chosen.kind === 'room' ? `Enter ${chosen.room}` : 'Move here'}
+          </Button>
+          <Button variant="secondary" onClick={onClearSelection}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      {!chosen && rooms.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {rooms.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              data-move={m.key}
+              onClick={() => onMove(m.key)}
+              className="min-h-10 px-3 rounded-full bg-[#d4af37]/15 border border-[#d4af37] text-[#ffe08a] text-xs font-deco font-bold uppercase tracking-wide flex items-center gap-1.5"
+            >
+              <DoorOpen className="w-3.5 h-3.5" /> Enter {m.room}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Every destination as a button, for screen readers and keyboard players. */}
+      <div className="sr-only">
+        {o.moves
+          .filter((m) => m.kind === 'square')
+          .map((m) => (
+            <button key={m.key} type="button" data-move={m.key} onClick={() => onMove(m.key)}>
+              Move to square {m.key.slice(3)}
+            </button>
+          ))}
+      </div>
       <div className="flex flex-wrap gap-2">
         {o.roll && (
           <Button id="roll" onClick={onRoll} className="flex-1 animate-pulse-glow">

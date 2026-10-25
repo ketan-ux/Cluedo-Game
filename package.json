@@ -13,10 +13,12 @@
     "lint": "tsc --noEmit && tsc --noEmit -p worker"
   },
   "dependencies": {
+    "@react-three/fiber": "9.8.1",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^0.546.0",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1"
+    "react-dom": "^19.0.1",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261008.1",
@@ -25,6 +27,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^5.0.4",
     "concurrently": "9.2.5",
     "tailwindcss": "^4.1.14",

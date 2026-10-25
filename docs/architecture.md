@@ -49,4 +49,23 @@ Tests cover all of this: `src/game/engine.test.ts`, plus `worker/roomCore.test.t
 
 ## Timers
 
-Durable Object alarms drive bot moves (about a second and a half of "thinking" per step) and the away-player fallback: a disconnected disprover has a card shown for them after 45 s, and a disconnected active player has their turn skipped after 90 s. Rooms delete themselves after 7 days without activity.
+Durable Object alarms drive bot moves (one to two and a half seconds of "thinking" per step, so the animations can finish) and the away-player fallback: a disconnected disprover has a card shown for them after 45 s, and a disconnected active player has their turn skipped after 90 s. Rooms delete themselves after 7 days without activity.
+
+## The board
+
+`src/components/board/BoardView.tsx` chooses between two boards that share one interface (`BoardProps`):
+
+- `board3d/Board3D.tsx`, built with React Three Fiber, downloads separately when a game starts. While it loads, and wherever WebGL is unavailable or the 3D board fails, the 2D board is shown instead.
+- `board/Board2D.tsx` is an SVG drawn from the same map.
+
+Both boards take their geometry from `board/layout.ts` (walls, doors, room label and token positions), so the two always agree.
+
+The 3D board redraws only while something is moving (`frameloop="demand"`), so an idle board uses no battery. Animations are driven by server events rather than timers:
+
+- `moved` (walk): the pawn hops square by square along the path the server sent.
+- `moved` (summoned) and `weaponMoved`: the piece flies in an arc into the room.
+- `moved` (passage): the pawn sinks through the floor and rises in the other room.
+- `rolled`: the dice tumble and land showing the faces the server rolled. Move highlights appear once they settle.
+- Game over: the envelope on the staircase opens before the result dialog appears.
+
+Everything is drawn in code, with no image files or 3D models to download: procedural canvas textures for the floors, wood and dice, lathe-turned pawns, and low-poly weapons and furniture.

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CardName, cardKind, Room, Suspect, SUSPECT_COLORS, Weapon } from '../../game/constants';
 import { cardSubtitle, ROOM_LORE } from '../../game/lore';
 import { WeaponIcon } from '../icons';
@@ -69,11 +69,56 @@ export function CardView({ card, size = 'md', selected = false, onClick, classNa
         <span className="font-bold tracking-[0.15em] uppercase opacity-70 text-[0.8em]">{kind.label}</span>
         <CardArt card={card} className="w-3/5" />
         <div className="text-center w-full">
-          <div className="font-deco font-bold uppercase leading-tight text-[0.92em] [overflow-wrap:anywhere]">{card}</div>
+          {/* Long single words (Candlestick, Conservatory) shrink rather than break mid-word. */}
+          <div className={`font-deco font-bold uppercase leading-tight break-words ${card.length > 10 && !card.includes(' ') ? 'text-[0.74em]' : 'text-[0.92em]'}`}>
+            {card}
+          </div>
           <div className="font-serif-vintage italic opacity-75 leading-tight truncate text-[0.85em]">{cardSubtitle(card)}</div>
         </div>
       </div>
       <div className="h-1.5 mt-1 rounded-full" style={{ backgroundColor: kind.band }} />
     </button>
+  );
+}
+
+export function CardBack({ size = 'md', className = '' }: { size?: CardViewProps['size']; className?: string }) {
+  return (
+    <div
+      className={`relative ${SIZES[size]} shrink-0 rounded-lg border-2 border-[#d4af37] shadow-xl p-1.5 bg-[#5c1018] ${className}`}
+      style={{
+        backgroundImage:
+          'repeating-linear-gradient(45deg, rgba(212,175,55,0.18) 0 2px, transparent 2px 10px), repeating-linear-gradient(-45deg, rgba(212,175,55,0.18) 0 2px, transparent 2px 10px)',
+      }}
+      aria-hidden="true"
+    >
+      <div className="w-full h-full rounded-md border border-[#d4af37]/60 flex items-center justify-center">
+        <span className="font-deco font-black text-[#d4af37] text-[2.2em] drop-shadow">?</span>
+      </div>
+    </div>
+  );
+}
+
+/** A card that arrives face down and turns over. */
+export function FlipCard({ card, size = 'md', delay = 300 }: { card: CardName; size?: CardViewProps['size']; delay?: number }) {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setUp(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  return (
+    // Purely decorative, so it must never catch a tap meant for the buttons around it.
+    <div className="[perspective:1200px] pointer-events-none">
+      <div
+        className="relative transition-transform duration-700 ease-out [transform-style:preserve-3d]"
+        style={{ transform: up ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
+      >
+        <div className="[backface-visibility:hidden]">
+          <CardBack size={size} />
+        </div>
+        <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+          <CardView card={card} size={size} />
+        </div>
+      </div>
+    </div>
   );
 }

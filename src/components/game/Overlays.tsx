@@ -40,12 +40,12 @@ export function DiceBadge({ roll, rolling }: { roll: [number, number] | null; ro
   );
 }
 
-/** What is being suggested right now, who could not disprove it, and who is about to. */
+/** What is being suggested right now and where it stands, in two short lines. Tap for who passed. */
 export function SuggestionBanner({ suggestion, players }: { suggestion: SuggestionRecord | null; players: PublicPlayer[] }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [open, setOpen] = useState(false);
   const key = suggestion ? `${suggestion.turn}-${suggestion.suspect}-${suggestion.weapon}` : '';
   useEffect(() => {
-    setCollapsed(false);
+    setOpen(false);
   }, [key]);
   if (!suggestion) return null;
 
@@ -57,33 +57,30 @@ export function SuggestionBanner({ suggestion, players }: { suggestion: Suggesti
       : 'No one could disprove it!';
 
   return (
-    <div className="absolute top-2 left-2 right-2 sm:right-auto sm:max-w-sm z-20">
-      <div className="rounded-xl border-2 border-[#d4af37] bg-[#1a0e08]/95 backdrop-blur shadow-xl text-[#f4ecd8] overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-[#251610] text-left"
-        >
-          <span className="font-deco font-bold text-[11px] uppercase tracking-wider text-[#d4af37] truncate">
-            {name(suggestion.suggesterId)} suggests
+    <div className="absolute top-2 left-2 right-14 sm:right-auto sm:max-w-sm z-20">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full text-left rounded-xl border-2 border-[#d4af37] bg-[#1a0e08]/90 backdrop-blur shadow-xl text-[#f4ecd8] px-3 py-1.5 space-y-0.5"
+      >
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-xs truncate">
+            <span className="font-deco font-bold text-[#d4af37]">{name(suggestion.suggesterId)}:</span>{' '}
+            {suggestion.suspect} · {suggestion.weapon} · {suggestion.room}
           </span>
-          {collapsed ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronUp className="w-4 h-4 shrink-0" />}
-        </button>
-        {!collapsed && (
-          <div className="px-3 py-2 space-y-1.5 text-xs">
-            <p className="font-deco">
-              {suggestion.suspect} · {suggestion.weapon} · {suggestion.room}
-            </p>
-            {suggestion.passedIds.length > 0 && (
-              <p className="text-[#baa479]">Couldn't disprove: {suggestion.passedIds.map(name).join(', ')}</p>
-            )}
-            <p className="flex items-center gap-1.5 text-amber-200">
-              <Shield className="w-3.5 h-3.5 shrink-0" />
-              {status}
-            </p>
-          </div>
+          {open ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] text-amber-200">
+          <Shield className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{status}</span>
+        </span>
+        {open && (
+          <span className="block text-[11px] text-[#baa479] pt-0.5">
+            {suggestion.passedIds.length ? `Couldn't disprove: ${suggestion.passedIds.map(name).join(', ')}` : 'Nobody passed.'}
+          </span>
         )}
-      </div>
+      </button>
     </div>
   );
 }

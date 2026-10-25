@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, Eye, Gavel, RotateCcw, Search, Shield, Sku
 import { CardName, Room, ROOMS, Suspect, SUSPECTS, Weapon, WEAPONS } from '../../game/constants';
 import { Envelope } from '../../game/engine';
 import { sounds } from '../../utils/audio';
-import { CardView } from './CardView';
+import { CardView, FlipCard } from './CardView';
 import { Button, Modal } from './Modal';
 import { CardPicker } from './Pickers';
 
@@ -163,8 +163,8 @@ export function CardRevealModal({
       onClose={onClose}
       footer={<Button onClick={onClose}>Got it</Button>}
     >
-      <div className="flex justify-center py-2 animate-card-flip">
-        <CardView card={card} size="lg" />
+      <div className="flex justify-center py-2">
+        <FlipCard card={card} size="lg" />
       </div>
     </Modal>
   );
@@ -327,9 +327,9 @@ export function GameOverModal({
         It was {envelope.suspect}, in the {envelope.room}, with the {envelope.weapon}.
       </h3>
       <div className="flex justify-center gap-2 sm:gap-3">
-        <CardView card={envelope.suspect} size="sm" />
-        <CardView card={envelope.weapon} size="sm" />
-        <CardView card={envelope.room} size="sm" />
+        <FlipCard card={envelope.suspect} size="sm" delay={300} />
+        <FlipCard card={envelope.weapon} size="sm" delay={650} />
+        <FlipCard card={envelope.room} size="sm" delay={1000} />
       </div>
     </Modal>
   );
