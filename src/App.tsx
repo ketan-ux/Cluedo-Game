@@ -5,6 +5,7 @@ import { sessions } from './net/session';
 import { HomeScreen } from './components/HomeScreen';
 import { LobbyScreen } from './components/LobbyScreen';
 import { GameScreen } from './components/GameScreen';
+import { Recover } from './components/Recover';
 
 export default function App() {
   const { room, status, error, batch, create, join, resume, leave, act, clearError } = useRoom();
@@ -37,7 +38,7 @@ export default function App() {
 
   return (
     <>
-      {screen}
+      <Recover>{screen}</Recover>
       {error && (
         <div
           role="alert"

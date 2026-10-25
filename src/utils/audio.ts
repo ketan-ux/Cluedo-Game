@@ -15,7 +15,8 @@ class SoundManager {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      // Refused until the player has touched the page; the next sound will try again.
+      this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }
@@ -191,4 +192,21 @@ class SoundManager {
   }
 }
 
-export const sounds = new SoundManager();
+/** Sound must never break the game, so any Web Audio error (some phones are strict) is swallowed. */
+function quiet<T extends object>(target: T): T {
+  return new Proxy(target, {
+    get(obj, key, receiver) {
+      const value = Reflect.get(obj, key, receiver);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        try {
+          return value.apply(obj, args);
+        } catch (err) {
+          console.warn('A sound failed to play', err);
+        }
+      };
+    },
+  });
+}
+
+export const sounds = quiet(new SoundManager());

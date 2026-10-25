@@ -41,9 +41,25 @@ export function pawnSpot(room: Room, index: number, count: number): Square {
   return { x: c.x + (col - (inRow - 1) / 2) * 0.95, y: c.y + (count > 3 ? (row - 0.5) * 0.95 : 0.1) };
 }
 
-export function weaponSpot(room: Room, index: number, count: number): Square {
+/** The stretch of a room's bottom row that weapons can use: the whole row, minus a secret-passage square. */
+function weaponRow(room: Room): { left: number; width: number; y: number } {
   const c = roomCentre(room);
-  return { x: c.x + (index - (count - 1) / 2) * 0.85, y: c.bottom - 0.6 };
+  const y = c.bottom - 1;
+  const corner = PASSAGE_CORNER[room];
+  const xs = ROOM_LAYOUTS[room].cells.filter((k) => k.y === y && !(corner && corner.x === k.x && corner.y === k.y)).map((k) => k.x);
+  const left = Math.min(...xs);
+  return { left, width: Math.max(...xs) - left + 1, y };
+}
+
+/** Distance between neighbouring weapons in a room: a square, or less when the row is crowded. */
+export function weaponGap(room: Room, count: number): number {
+  return count < 2 ? 1 : Math.min(1, (weaponRow(room).width - 1) / (count - 1));
+}
+
+/** Weapons sit in a row along the room's bottom row of squares. */
+export function weaponSpot(room: Room, index: number, count: number): Square {
+  const row = weaponRow(room);
+  return { x: row.left + row.width / 2 + (index - (count - 1) / 2) * weaponGap(room, count), y: row.y + 0.45 };
 }
 
 export function squareCentre(s: Square): Square {
