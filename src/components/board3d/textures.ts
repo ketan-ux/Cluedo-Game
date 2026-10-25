@@ -13,7 +13,8 @@ function canvas(w: number, h = w) {
 function toTexture(c: HTMLCanvasElement, repeat = true): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  // Keeps floor patterns crisp at low angles instead of shimmering (clamped to what the GPU supports).
+  t.anisotropy = 8;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }

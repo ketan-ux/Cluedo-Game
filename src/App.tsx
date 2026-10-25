@@ -5,6 +5,7 @@ import { sessions } from './net/session';
 import { HomeScreen } from './components/HomeScreen';
 import { LobbyScreen } from './components/LobbyScreen';
 import { GameScreen } from './components/GameScreen';
+import { Recover } from './components/Recover';
 
 export default function App() {
   const { room, status, error, batch, create, join, resume, leave, act, clearError } = useRoom();
@@ -37,11 +38,11 @@ export default function App() {
 
   return (
     <>
-      {screen}
+      <Recover>{screen}</Recover>
       {error && (
         <div
           role="alert"
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] w-[min(92vw,28rem)] p-3 rounded-xl bg-red-950/95 border-2 border-red-600 text-red-100 shadow-2xl flex items-center gap-2"
+          className="fixed top-[calc(env(safe-area-inset-top)+3.5rem)] left-1/2 -translate-x-1/2 z-[70] w-[min(92vw,28rem)] p-3 rounded-xl bg-red-950/95 border-2 border-red-600 text-red-100 shadow-2xl flex items-center gap-2"
         >
           <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
           <span className="text-sm flex-1">{error}</span>

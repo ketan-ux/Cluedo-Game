@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, RootState, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { Crosshair, Mountain, RotateCw } from 'lucide-react';
@@ -8,7 +8,7 @@ import { ROOMS, Room, SECRET_PASSAGES, Suspect, SUSPECT_COLORS, SUSPECTS, Weapon
 import { Envelope, GameEvent } from '../../game/engine';
 import { MoveOption } from '../../game/movement';
 import { GameView } from '../../game/view';
-import { labelSpot, PASSAGE_CORNER, pawnPositions, roomCentre, weaponPositions } from '../board/layout';
+import { labelSpot, PASSAGE_CORNER, pawnPositions, roomCentre, weaponGap, weaponPositions } from '../board/layout';
 import { BoardProps, pointerKind } from '../board/types';
 import {
   corridorSquares,
@@ -69,7 +69,8 @@ function StaticBoard({ fontsReady }: { fontsReady: boolean }) {
     return {
       table: new THREE.MeshStandardMaterial({ map: wood, roughness: 0.75 }),
       frame: new THREE.MeshStandardMaterial({ map: frameWood, roughness: 0.6 }),
-      base: new THREE.MeshStandardMaterial({ color: '#21140c', roughness: 0.9 }),
+      // Pushed back in the depth buffer so the room floors always win over it.
+      base: new THREE.MeshStandardMaterial({ color: '#21140c', roughness: 0.9, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }),
       walls: wallsGeometry(),
       wallMaterial: new THREE.MeshStandardMaterial({ color: '#3b2415', roughness: 0.7 }),
       thresholds: thresholdsGeometry(),
@@ -117,11 +118,12 @@ function StaticBoard({ fontsReady }: { fontsReady: boolean }) {
       <mesh position={[0, -0.36, 0]} receiveShadow material={parts.table}>
         <boxGeometry args={[46, 0.2, 46]} />
       </mesh>
-      <mesh position={[0, -0.14, 0]} receiveShadow castShadow material={parts.frame}>
+      {/* Frame top at -0.03, the dark board between the squares at -0.01, floors at 0.003. */}
+      <mesh position={[0, -0.16, 0]} receiveShadow castShadow material={parts.frame}>
         <boxGeometry args={[BOARD_WIDTH + 1.2, 0.26, BOARD_HEIGHT + 1.2]} />
       </mesh>
-      <mesh position={[0, -0.005, 0]} receiveShadow material={parts.base}>
-        <boxGeometry args={[BOARD_WIDTH, 0.01, BOARD_HEIGHT]} />
+      <mesh position={[0, -0.02, 0]} receiveShadow material={parts.base}>
+        <boxGeometry args={[BOARD_WIDTH, 0.02, BOARD_HEIGHT]} />
       </mesh>
       <instancedMesh ref={tilesRef} args={[sharedGeometry.tile, parts.tileMaterial, parts.tiles.length]} receiveShadow />
       {parts.floors.map((f) => (
@@ -162,11 +164,11 @@ function StaticBoard({ fontsReady }: { fontsReady: boolean }) {
             </group>
           );
         })}
-        <mesh position={[0, STAIRS.top + 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]} material={parts.baize} receiveShadow>
+        <mesh position={[0, STAIRS.top + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]} material={parts.baize} receiveShadow>
           <planeGeometry args={[2.9, 4.9]} />
         </mesh>
         {stairsTitle && (
-          <mesh position={[0, STAIRS.top + 0.01, 0.3]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh position={[0, STAIRS.top + 0.024, 0.3]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[2.5, 2.5 / stairsTitle.aspect]} />
             <meshBasicMaterial map={stairsTitle.texture} transparent depthWrite={false} toneMapped={false} />
           </mesh>
@@ -230,7 +232,7 @@ function usePieceDirector(game: GameView, batchId: number, events: GameEvent[]) 
   }, [game.pawns]);
   const weaponTargets = useMemo(() => {
     const at = weaponPositions(game.weapons);
-    return Object.fromEntries(WEAPONS.map((w) => [w, toWorld(at[w], 0.005)])) as Record<Weapon, THREE.Vector3>;
+    return Object.fromEntries(WEAPONS.map((w) => [w, toWorld(at[w], 0.004)])) as Record<Weapon, THREE.Vector3>;
   }, [game.weapons]);
 
   useLayoutEffect(() => {
@@ -335,6 +337,15 @@ function ActiveMarker() {
 function Pieces({ game, myId, batchId, events }: { game: GameView; myId: string | null; batchId: number; events: GameEvent[] }) {
   const pieces = usePieceDirector(game, batchId, events);
   const weapons = useMemo(() => Object.fromEntries(WEAPONS.map((w) => [w, buildWeapon(w)])) as Record<Weapon, THREE.Group>, []);
+  // Tokens are about a square wide; shrink them when a crowded room squeezes them closer together.
+  const weaponScale = useMemo(() => {
+    const out = {} as Record<Weapon, number>;
+    for (const w of WEAPONS) {
+      const together = WEAPONS.filter((o) => game.weapons[o] === game.weapons[w]).length;
+      out[w] = Math.min(1, weaponGap(game.weapons[w], together) / 0.95);
+    }
+    return out;
+  }, [game.weapons]);
   const active = game.phase === 'playing' ? game.players.find((p) => p.id === game.turn.playerId)?.suspect : undefined;
   const mine = game.players.find((p) => p.id === myId)?.suspect;
   return (
@@ -352,7 +363,7 @@ function Pieces({ game, myId, batchId, events }: { game: GameView; myId: string 
       ))}
       {WEAPONS.map((w) => (
         <Piece key={w} id={`w:${w}`} pieces={pieces}>
-          <primitive object={weapons[w]} />
+          <primitive object={weapons[w]} scale={weaponScale[w]} />
         </Piece>
       ))}
     </group>
@@ -525,7 +536,7 @@ function MoveTargets({
   const squares = moves.filter((m): m is Extract<MoveOption, { kind: 'square' }> => m.kind === 'square');
   const rooms = moves.filter((m): m is Extract<MoveOption, { kind: 'room' }> => m.kind === 'room');
   const squaresRef = useRef<THREE.InstancedMesh>(null);
-  const roomGeometries = useMemo(() => Object.fromEntries(ROOMS.map((r) => [r, roomFloorGeometry(r, 1, 0.02)])) as Record<Room, THREE.BufferGeometry>, []);
+  const roomGeometries = useMemo(() => Object.fromEntries(ROOMS.map((r) => [r, roomFloorGeometry(r, 1, 0.032)])) as Record<Room, THREE.BufferGeometry>, []);
   const enterLabel = useMemo(() => labelTexture('ENTER', { color: '#1a0f0d', outline: '#ffd54a' }), []);
   const overlay = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffd54a', transparent: true, opacity: 0.3, depthWrite: false }), []);
   const chosenOverlay = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffd54a', transparent: true, opacity: 0.5, depthWrite: false }), []);
@@ -671,6 +682,9 @@ function CameraRig({ command }: { command: CameraCommand }) {
   const { camera, gl, size, invalidate } = useThree();
   const controls = useRef<MapControls | null>(null);
   const view = useRef({ polar: 0.55, azimuth: 0 });
+  // Whether the player has moved the camera since the last fit, and the shape it was fitted to.
+  const moved = useRef(false);
+  const fittedAspect = useRef(0);
 
   // A layout effect, so the controls exist before the first fit below.
   useLayoutEffect(() => {
@@ -681,6 +695,8 @@ function CameraRig({ command }: { command: CameraCommand }) {
     c.minDistance = 5;
     c.maxPolarAngle = 1.15;
     c.addEventListener('change', () => {
+      // Only real camera movement counts; fit() clears this again after its own update.
+      moved.current = true;
       // Keep the board in view: the look-at point stays over the board.
       const t = c.target;
       const clamped = new THREE.Vector3(
@@ -708,10 +724,20 @@ function CameraRig({ command }: { command: CameraCommand }) {
     camera.position.setFromSphericalCoords(d, view.current.polar, view.current.azimuth);
     camera.lookAt(0, 0, 0);
     c.update();
+    moved.current = false;
+    fittedAspect.current = size.width / Math.max(1, size.height);
     invalidate();
   };
 
-  useLayoutEffect(fit, [size.width, size.height]);
+  // The board resizes whenever the action bar grows or shrinks. Keep the player's own view through
+  // that, and only refit if they haven't touched the camera or the shape really changed (rotation).
+  useLayoutEffect(() => {
+    const aspect = size.width / Math.max(1, size.height);
+    const reshaped = !fittedAspect.current || Math.abs(aspect / fittedAspect.current - 1) > 0.3;
+    if (!moved.current || reshaped) fit();
+    else invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size.width, size.height]);
   useEffect(() => {
     if (command.id === 0) return;
     if (command.kind === 'tilt') view.current.polar = view.current.polar > 0.2 ? 0.02 : 0.55;
@@ -740,7 +766,7 @@ function Scene({ game, myId, batch, selected, onPick, onPassage, command }: Boar
   }, [batch]);
 
   useEffect(() => {
-    gl.shadowMap.type = THREE.PCFSoftShadowMap;
+    gl.shadowMap.type = THREE.PCFShadowMap;
   }, [gl]);
 
   // Development only: lets browser tests tap an exact square on the 3D board.
@@ -770,7 +796,10 @@ function Scene({ game, myId, batch, selected, onPick, onPassage, command }: Boar
         shadow-camera-right={17}
         shadow-camera-top={17}
         shadow-camera-bottom={-17}
-        shadow-bias={-0.0004}
+        shadow-camera-near={4}
+        shadow-camera-far={60}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.035}
       />
       <pointLight position={[0, 6, 0]} intensity={18} distance={22} color="#ffcf8a" />
 
@@ -787,7 +816,7 @@ function Scene({ game, myId, batch, selected, onPick, onPassage, command }: Boar
 }
 
 function SuggestionGlow({ room }: { room: Room }) {
-  const geometry = useMemo(() => roomFloorGeometry(room, 1, 0.015), [room]);
+  const geometry = useMemo(() => roomFloorGeometry(room, 1, 0.026), [room]);
   const material = useMemo(() => new THREE.MeshBasicMaterial({ color: '#c8102e', transparent: true, opacity: 0.2, depthWrite: false }), []);
   useFrame((state) => {
     material.opacity = 0.12 + (Math.sin(state.clock.getElapsedTime() * 3) + 1) * 0.08;
@@ -800,13 +829,40 @@ function SuggestionGlow({ room }: { room: Room }) {
 export default function Board3D(props: BoardProps) {
   const [command, setCommand] = useState<CameraCommand>({ id: 0, kind: 'fit' });
   const send = (kind: CameraCommand['kind']) => setCommand((c) => ({ id: c.id + 1, kind }));
+
+  // Phones drop the WebGL context under memory pressure or after the browser was in the background,
+  // which leaves a blank board. Build a fresh one; if that keeps happening, give up and let the
+  // surrounding error boundary switch to the 2D board.
+  const [generation, setGeneration] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const losses = useRef<number[]>([]);
+  const retry = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(retry.current), []);
+  if (failed) throw new Error('The 3D board keeps losing its graphics context.');
+  const onCreated = ({ gl }: RootState) => {
+    gl.domElement.addEventListener(
+      'webglcontextlost',
+      (e) => {
+        e.preventDefault();
+        const now = Date.now();
+        losses.current = [...losses.current.filter((t) => now - t < 60_000), now];
+        console.warn('3D board lost its graphics context; rebuilding it.');
+        if (losses.current.length > 3) setFailed(true);
+        else retry.current = setTimeout(() => setGeneration((g) => g + 1), 400);
+      },
+      { once: true }
+    );
+  };
+
   return (
     <div className="relative w-full h-full touch-none" data-board="3d">
       <Canvas
+        key={generation}
+        onCreated={onCreated}
         shadows
         frameloop="demand"
         dpr={[1, 1.75]}
-        camera={{ fov: 38, near: 0.1, far: 300, position: [0, 30, 18] }}
+        camera={{ fov: 38, near: 0.5, far: 220, position: [0, 30, 18] }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         aria-label="Cluedo board"
       >

@@ -196,7 +196,7 @@ function Safe({ x, y }: { x: number; y: number }) {
 
 function Rug({ x, y, w, d }: { x: number; y: number; w: number; d: number }) {
   return (
-    <mesh position={toWorld({ x, y }, 0.008)} rotation={[-Math.PI / 2, 0, 0]} material={M.rug} receiveShadow>
+    <mesh position={toWorld({ x, y }, 0.016)} rotation={[-Math.PI / 2, 0, 0]} material={M.rug} receiveShadow>
       <planeGeometry args={[w, d]} />
     </mesh>
   );

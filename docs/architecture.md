@@ -73,6 +73,12 @@ The 3D board redraws only while something is moving (`frameloop="demand"`), so a
 
 Everything is drawn in code, with no image files or 3D models to download: procedural canvas textures for the floors, wood and dice, lathe-turned pawns, and low-poly weapons and furniture.
 
+Flat surfaces are stacked at least a centimetre apart (frame, the dark board between squares, room floors, rugs, highlights), and the camera's depth range is kept tight, so nothing flickers or shows black lines when the board is turned. If a phone drops the WebGL context (memory pressure, or after the browser was in the background), the board rebuilds itself; if that keeps happening it switches to the 2D board.
+
+## Recovering from crashes
+
+`components/Recover.tsx` wraps the current screen. If anything in it throws, it is drawn again from the latest room state (which lives in `useRoom`, above the boundary) instead of React leaving a blank page. After repeated crashes it offers a reload. Sounds are wrapped so a Web Audio error can never reach React.
+
 ## The game screen
 
 `GameScreen` is one CSS grid (`.game-grid` in `src/index.css`) with three arrangements, so the same components move rather than being rendered twice:
